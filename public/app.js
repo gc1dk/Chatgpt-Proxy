@@ -11,7 +11,7 @@
   const sidebarBody = $('.sidebar-body');
 
   const BLOSSOM_SVG =
-    '<svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path id="blossom-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#10a37f"/><use href="#blossom-a" transform="rotate(60 1203 1203)"/><use href="#blossom-a" transform="rotate(120 1203 1203)"/><use href="#blossom-a" transform="rotate(180 1203 1203)"/><use href="#blossom-a" transform="rotate(240 1203 1203)"/><use href="#blossom-a" transform="rotate(300 1203 1203)"/></svg>';
+    '<svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom-a" transform="rotate(60 1203 1203)"/><use href="#blossom-a" transform="rotate(120 1203 1203)"/><use href="#blossom-a" transform="rotate(180 1203 1203)"/><use href="#blossom-a" transform="rotate(240 1203 1203)"/><use href="#blossom-a" transform="rotate(300 1203 1203)"/></svg>';
   const COPY_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.25 2.25C5.46 2.25 4 3.71 4 5.5v8.25a.75.75 0 0 0 1.5 0V5.5c0-.97.78-1.75 1.75-1.75h5.25a.75.75 0 0 0 0-1.5H7.25ZM11 5.25c-1.8 0-3.25 1.46-3.25 3.25v7c0 1.8 1.46 3.25 3.25 3.25h4c1.8 0 3.25-1.46 3.25-3.25v-7c0-1.8-1.46-3.25-3.25-3.25h-4Zm-1.75 3.25c0-.97.78-1.75 1.75-1.75h4c.97 0 1.75.78 1.75 1.75v7c0 .97-.78 1.75-1.75 1.75h-4a1.75 1.75 0 0 1-1.75-1.75v-7Z"/></svg>';
   const STOP_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.0834 3.91797C14.7392 3.91797 16.0812 5.26023 16.0814 6.91602V13.083C16.0814 14.7389 14.7393 16.0811 13.0834 16.0811H6.91638C5.2606 16.0809 3.91833 14.7388 3.91833 13.083V6.91602C3.91851 5.26034 5.26071 3.91814 6.91638 3.91797H13.0834Z"/></svg>';
   const RETRY_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M15.3124 4.93317C14.9966 4.6002 14.4677 4.58616 14.1347 4.90195L13.1228 5.85386C11.6567 4.45304 9.59095 3.90002 7.62612 4.45499C4.79601 5.24742 3.01804 8.15454 3.81047 10.9846C4.6029 13.8148 7.51003 15.5927 10.3401 14.8003C12.4387 14.2097 13.8927 12.4036 14.1268 10.3756C14.171 10.0132 14.4821 9.74396 14.8445 9.78816C15.2069 9.83236 15.4761 10.1435 15.4319 10.5059C15.1392 12.9968 13.3474 15.2161 10.7168 15.9591C7.12435 16.9657 3.42812 14.7472 2.42148 11.1548C1.41485 7.56235 3.63332 3.86611 7.22579 2.85948C9.66003 2.16786 12.1808 2.79148 13.9662 4.48231L14.9966 3.51339C15.3296 3.1976 15.8585 3.21164 16.1743 3.54461C16.4901 3.87758 16.4761 4.40648 16.1431 4.72227L15.3124 4.93317ZM10 5.25a.75.75 0 0 1 .75.75v4.25l2.5 1.5a.75.75 0 1 1-.75 1.3l-2.94-1.76a.75.75 0 0 1-.31-.61V6a.75.75 0 0 1 .75-.75Z"/></svg>';
@@ -71,6 +71,91 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
+  const CODE_LANGS = {
+    html: { label: 'HTML', filename: 'index.html', preview: true },
+    svg: { label: 'SVG', filename: 'image.svg', preview: true },
+    js: { label: 'JavaScript', filename: 'script.js', preview: true },
+    javascript: { label: 'JavaScript', filename: 'script.js', preview: true },
+    jsx: { label: 'JSX', filename: 'App.jsx', preview: true },
+    css: { label: 'CSS', filename: 'style.css', preview: true },
+    ts: { label: 'TypeScript', filename: 'script.ts' },
+    tsx: { label: 'TSX', filename: 'App.tsx' },
+    json: { label: 'JSON', filename: 'data.json' },
+    py: { label: 'Python', filename: 'script.py' },
+    python: { label: 'Python', filename: 'script.py' },
+    sh: { label: 'Shell', filename: 'script.sh' },
+    bash: { label: 'Bash', filename: 'script.sh' },
+    shell: { label: 'Shell', filename: 'script.sh' },
+    powershell: { label: 'PowerShell', filename: 'script.ps1' },
+    md: { label: 'Markdown', filename: 'README.md' },
+    markdown: { label: 'Markdown', filename: 'README.md' },
+    txt: { label: 'Text', filename: 'notes.txt' },
+    sql: { label: 'SQL', filename: 'query.sql' },
+    java: { label: 'Java', filename: 'Main.java' },
+    c: { label: 'C', filename: 'main.c' },
+    cpp: { label: 'C++', filename: 'main.cpp' },
+    cs: { label: 'C#', filename: 'Program.cs' },
+    go: { label: 'Go', filename: 'main.go' },
+    rust: { label: 'Rust', filename: 'main.rs' },
+    rs: { label: 'Rust', filename: 'main.rs' },
+    rb: { label: 'Ruby', filename: 'script.rb' },
+    php: { label: 'PHP', filename: 'script.php' },
+    kt: { label: 'Kotlin', filename: 'Main.kt' },
+    swift: { label: 'Swift', filename: 'main.swift' },
+    yaml: { label: 'YAML', filename: 'config.yml' },
+    yml: { label: 'YAML', filename: 'config.yml' },
+    xml: { label: 'XML', filename: 'data.xml' },
+    dockerfile: { label: 'Dockerfile', filename: 'Dockerfile' },
+    diff: { label: 'Diff', filename: 'changes.diff' },
+  };
+  const CODE_DEFAULT = { label: 'Code', filename: 'code.txt' };
+
+  function codeInfoFor(block) {
+    const cls = block.className || '';
+    const m = cls.match(/language-([\w+-]+)/i);
+    if (m) {
+      const info = CODE_LANGS[m[1].toLowerCase()];
+      if (info) return info;
+    }
+    return CODE_DEFAULT;
+  }
+
+  function buildPreviewHtml(lang, code) {
+    if (lang === 'html') return code;
+    if (lang === 'svg') {
+      return code.trim().indexOf('<svg') === 0 ? code : '<div style="padding:16px">' + code + '</div>';
+    }
+    if (lang === 'css') {
+      return '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>CSS preview</title><style>' + code + '</style></head><body></body></html>';
+    }
+    if (lang === 'js' || lang === 'javascript' || lang === 'jsx') {
+      const safe = code.replace(/<\/script/gi, '<\\/script');
+      return '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>JavaScript preview</title><style>body{font:14px/1.5 system-ui,-apple-system,sans-serif;padding:16px;margin:0}</style></head><body><script>' + safe + '</scr' + 'ipt></body></html>';
+    }
+    return null;
+  }
+
+  const previewState = { html: '', raw: '', filename: 'index.html' };
+
+  function openPreview(lang, code) {
+    const html = buildPreviewHtml(lang, code);
+    if (html == null) return;
+    const info = CODE_LANGS[lang] || CODE_DEFAULT;
+    previewState.html = html;
+    previewState.raw = code;
+    previewState.filename = info.filename;
+    const frame = $('#preview-frame');
+    frame.srcdoc = html;
+    $('#preview-title').textContent = info.filename + ' — live preview';
+    $('#preview-drawer').hidden = false;
+    document.body.classList.add('preview-open');
+  }
+
+  function closePreview() {
+    $('#preview-drawer').hidden = true;
+    document.body.classList.remove('preview-open');
+  }
+
   function renderMarkdown(text) {
     const raw = window.marked.parse(text || '', { async: false });
     const clean = window.DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
@@ -80,19 +165,51 @@
       if (window.hljs) {
         try { window.hljs.highlightElement(block); } catch (e) {}
       }
-      const wrap = block.closest('pre');
-      if (wrap) {
-        const btn = document.createElement('button');
-        btn.className = 'copy-btn';
-        btn.textContent = 'Copy';
-        btn.addEventListener('click', () => {
-          copyText(block.innerText).then(() => {
-            btn.textContent = 'Copied';
-            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-          });
-        });
-        wrap.appendChild(btn);
+      const pre = block.closest('pre');
+      if (!pre) return;
+      const langToken = (block.className || '').match(/language-([\w+-]+)/i);
+      const langId = langToken ? langToken[1].toLowerCase() : 'txt';
+      const info = codeInfoFor(block);
+      const rawCode = block.innerText;
+      const wrap = document.createElement('div');
+      wrap.className = 'code-block';
+      pre.parentNode.replaceChild(wrap, pre);
+      wrap.appendChild(pre);
+      const head = document.createElement('div');
+      head.className = 'code-head';
+      const lang = document.createElement('span');
+      lang.className = 'code-lang';
+      lang.textContent = info.label;
+      head.appendChild(lang);
+      const actions = document.createElement('div');
+      actions.className = 'code-actions';
+      if (info.preview) {
+        const pv = document.createElement('button');
+        pv.className = 'code-btn';
+        pv.textContent = 'Preview';
+        pv.addEventListener('click', () => openPreview(langId, rawCode));
+        actions.appendChild(pv);
       }
+      const dl = document.createElement('button');
+      dl.className = 'code-btn';
+      dl.textContent = 'Download';
+      dl.addEventListener('click', () => downloadText(rawCode, info.filename));
+      actions.appendChild(dl);
+      const cp = document.createElement('button');
+      cp.className = 'code-btn';
+      cp.textContent = 'Copy';
+      cp.addEventListener('click', () => {
+        copyText(rawCode).then(() => {
+          cp.textContent = 'Copied';
+          setTimeout(() => { cp.textContent = 'Copy'; }, 1500);
+        });
+      });
+      actions.appendChild(cp);
+      head.appendChild(actions);
+      wrap.insertBefore(head, pre);
+      if (info.preview) wrap.dataset.previewable = '1';
+      wrap._langId = langId;
+      wrap._rawCode = rawCode;
     });
     return container;
   }
@@ -155,13 +272,6 @@
       });
     });
     actions.appendChild(copyBtn);
-    const dlBtn = document.createElement('button');
-    dlBtn.className = 'msg-action';
-    dlBtn.innerHTML = DOWNLOAD_SVG + '<span>Download</span>';
-    dlBtn.addEventListener('click', () => {
-      downloadText(text, 'chatgpt-reply-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.md');
-    });
-    actions.appendChild(dlBtn);
     msgEl.appendChild(actions);
   }
 
@@ -213,6 +323,10 @@
         msg.classList.remove('streaming');
         if (this.buf.trim()) {
           markdown.replaceChildren(renderMarkdown(this.buf));
+          const pb = markdown.querySelector('.code-block[data-previewable="1"]');
+          if (pb && !document.body.classList.contains('preview-open')) {
+            openPreview(pb._langId, pb._rawCode);
+          }
         } else {
           markdown.innerHTML = '';
         }
@@ -548,6 +662,27 @@
 
   $('#settings-modal').addEventListener('click', (e) => {
     if (e.target.id === 'settings-modal') $('#settings-modal').hidden = true;
+  });
+
+  $('#preview-refresh').addEventListener('click', () => {
+    const frame = $('#preview-frame');
+    frame.srcdoc = '';
+    frame.srcdoc = previewState.html;
+  });
+
+  $('#preview-open').addEventListener('click', () => {
+    const blob = new Blob([previewState.html], { type: 'text/html;charset=utf-8' });
+    window.open(URL.createObjectURL(blob), '_blank');
+  });
+
+  $('#preview-download').addEventListener('click', () => {
+    downloadText(previewState.raw, previewState.filename);
+  });
+
+  $('#preview-close').addEventListener('click', closePreview);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#preview-drawer').hidden) closePreview();
   });
 
   $('#settings-theme').addEventListener('click', () => {
