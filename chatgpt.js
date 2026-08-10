@@ -382,6 +382,20 @@ class ChatGPTDriver {
       .catch(() => {});
   }
 
+  async closeChat(chatId) {
+    const page = this.pages[chatId];
+    if (!page) return;
+    try {
+      await page.close();
+    } catch {}
+    delete this.pages[chatId];
+    delete this._deltas[chatId];
+    if (this.page === page) {
+      const next = Object.values(this.pages)[0];
+      this.page = next || this._initialPage || null;
+    }
+  }
+
   async dispose() {
     try {
       await this.context.close();

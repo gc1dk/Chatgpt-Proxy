@@ -290,6 +290,39 @@ app.post('/api/stop', async (req, res) => {
   }
 });
 
+app.post('/api/chat-delete', async (req, res) => {
+  const clientId = clientIdOf(req);
+  const chatId = String((req.body && req.body.chatId) || '').trim();
+  const chat = getChat(chatId);
+  if (!chat || chat.owner !== clientId) {
+    res.status(404).json({ error: 'chat not found' });
+    return;
+  }
+  store.chats = store.chats.filter((c) => c.id !== chatId);
+  if (store.activeChatId === chatId) store.activeChatId = null;
+  saveStore();
+  await driver.closeChat(chatId).catch(() => {});
+  res.json({ ok: true });
+});
+
+app.post('/api/chat-rename', (req, res) => {
+  const clientId = clientIdOf(req);
+  const chatId = String((req.body && req.body.chatId) || '').trim();
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 60);
+  if (!title) {
+    res.status(400).json({ error: 'title is required' });
+    return;
+  }
+  const chat = getChat(chatId);
+  if (!chat || chat.owner !== clientId) {
+    res.status(404).json({ error: 'chat not found' });
+    return;
+  }
+  chat.title = title;
+  saveStore();
+  res.json({ ok: true });
+});
+
 app.get('/api/history', async (req, res) => {
   const clientId = clientIdOf(req);
   const chatId = String(req.query.chatId || '').trim();
@@ -305,7 +338,10 @@ app.get('/api/history', async (req, res) => {
       saveStore();
     }
   } catch {}
-  res.json({ messages: chat.messages });
+  const deduped = chat.messages.filter(
+    (m, i) => i === 0 || !(m.role === chat.messages[i - 1].role && m.text === chat.messages[i - 1].text)
+  );
+  res.json({ messages: deduped });
 });
 
 app.get('/api/settings', (req, res) => {

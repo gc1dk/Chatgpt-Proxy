@@ -56,7 +56,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **ChatGPT-style interface** — clean 1:1 UI: logo, sidebar, theme toggle, settings, streaming bubbles; no ads, no paid features
 - **Settings** — theme, system prompt, and a "clear cookies / fresh session" button
 - **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
-- **Shared conversation** — everyone on your LAN chats in the same thread
+- **Private per browser** — each browser gets its own chat list and history (auto-assigned client id); no one else on your LAN can see your chats
 - **Request queue** — messages are processed one at a time; clients wait their turn
 - **Stop generation** — cancel the current response
 - **Persistent profile** — cookies and session data survive restarts in `./profile`
@@ -170,9 +170,11 @@ Everyone shares the same conversation thread.
 
 ## API
 
+All endpoints accept an optional `X-Client-Id` header (a per-browser id). When present, chats and history are scoped to that client and cannot be read or modified by other clients. The web UI always sends it.
+
 ### `POST /api/chat` or `GET /api/chat?prompt=...`
 
-Body (POST): `{ "message": "Hello", "chatId": "optional" }` — without `chatId` a new chat is created and becomes active.
+Body (POST): `{ "message": "Hello", "chatId": "optional" }` — without `chatId` a new chat is created and becomes active. If `chatId` belongs to another client, `404` is returned.
 
 Returns an **SSE stream** with these event types:
 
@@ -198,7 +200,15 @@ Returns `{ messages: [{ role, text }, ...] }` for the given chat — from the sa
 
 ### `GET /api/chats`
 
-Returns `{ chats: [{ id, title, updatedAt, messageCount }], activeChatId }`.
+Returns `{ chats: [{ id, title, updatedAt, messageCount }], activeChatId }` — only chats owned by the requesting client.
+
+### `POST /api/chat-rename`
+
+Body: `{ "chatId": "...", "title": "..." }` — renames the chat (title capped at 60 characters). Chats owned by other clients are rejected with `404`.
+
+### `POST /api/chat-delete`
+
+Body: `{ "chatId": "..." }` — deletes the chat, closes its browser tab, and clears the active chat if it was active. Chats owned by other clients are rejected with `404`.
 
 ### `GET /api/settings` / `POST /api/settings`
 
