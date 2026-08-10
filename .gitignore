@@ -1,0 +1,7 @@
+node_modules/
+profile/
+*.log
+.env
+state.json
+chats.json
+settings.json
