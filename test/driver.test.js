@@ -89,6 +89,18 @@ test('submit(): throws cleanly for oversized messages', async () => {
   );
 });
 
+test('submit(): handles a large story (~1 MB)', async () => {
+  await makeDriver();
+  const story =
+    'Once upon a time, there was a very long story. '.repeat(20000); // ~1 MB
+  const result = await driver.submit({ chatId: 'c4b', message: story });
+  assert.equal(result.error, null, 'large story should get a reply, got: ' + JSON.stringify(result));
+  const history = await driver.getHistory('c4b');
+  const userMsgs = history.filter((m) => m.role === 'user');
+  assert.ok(userMsgs.length > 0);
+  assert.equal(userMsgs[userMsgs.length - 1].text.length, story.trim().length, 'full story should be present');
+});
+
 test('submit(): same chat accumulates turns (baseline grows)', async () => {
   await makeDriver();
   await driver.submit({ chatId: 'c5', message: 'turn one' });

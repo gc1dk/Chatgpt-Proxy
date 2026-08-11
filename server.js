@@ -9,7 +9,7 @@ const { ChatGPTDriver, RESET_MARKER } = require('./chatgpt');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HEADED = process.env.HEADED === '1';
 const PROFILE = process.env.PROFILE || path.join(__dirname, 'profile');
-const TIMEOUT = parseInt(process.env.TIMEOUT || '180000', 10);
+const TIMEOUT = parseInt(process.env.TIMEOUT || '300000', 10);
 const JOB_WATCHDOG_MS = Math.max(360000, TIMEOUT * 2 + 60000);
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, 'state.json');
 const CHATS_FILE = process.env.CHATS_FILE || path.join(__dirname, 'chats.json');

@@ -20,6 +20,10 @@ const HTML = `<!doctype html>
     const conv = document.getElementById('conv');
     const ta = document.querySelector('[data-mobile-composer-prompt]');
     const btn = document.querySelector('[data-composer-submit]');
+    btn.disabled = true;
+    ta.addEventListener('input', () => {
+      btn.disabled = !ta.value;
+    });
 
     function addMessage(role, text, streaming) {
       const el = document.createElement('div');

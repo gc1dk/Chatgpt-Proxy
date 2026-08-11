@@ -439,6 +439,8 @@
       ready: false,
       failed: false,
       rafPending: false,
+      plain: false,
+      plainEl: null,
       setThinking() {
         if (this.failed) return;
         markdown.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
@@ -450,16 +452,31 @@
           return;
         }
         msg.classList.add('has-text');
-        markdown.replaceChildren(renderMarkdown(this.buf));
+        if (!this.plain && this.buf.length > 120000) {
+          this.plain = true;
+        }
+        if (this.plain) {
+          if (!this.plainEl) {
+            this.plainEl = document.createElement('pre');
+            this.plainEl.className = 'plain-reply';
+            markdown.replaceChildren(this.plainEl);
+          }
+          this.plainEl.textContent = this.buf;
+        } else {
+          markdown.replaceChildren(renderMarkdown(this.buf));
+        }
         scrollToBottom(false);
       },
       renderSoon() {
         if (this.rafPending) return;
         this.rafPending = true;
-        requestAnimationFrame(() => {
+        const fire = () => {
           this.rafPending = false;
           this.render();
-        });
+        };
+        // Huge buffers make full markdown re-renders expensive — throttle them.
+        if (this.buf.length > 60000) setTimeout(fire, 400);
+        else requestAnimationFrame(fire);
       },
       append(t) {
         if (t && !this.failed) {
@@ -471,6 +488,8 @@
         if (this.failed) return;
         this.buf = '';
         this.rafPending = false;
+        this.plain = false;
+        this.plainEl = null;
         msg.classList.remove('has-text');
         this.render();
       },
@@ -559,11 +578,11 @@
         return;
       }
       const idle = Date.now() - lastEventAt;
-      if (idle > 150000) {
+      if (idle > 300000) {
         clearInterval(watchdog);
         bubble.error({
           code: 'timeout',
-          message: 'No response from ChatGPT for 2.5 minutes — it may be stuck. Try again.',
+          message: 'No response from ChatGPT for 5 minutes — it may be stuck. Try again.',
         });
         if (reader) reader.cancel().catch(() => {});
       }

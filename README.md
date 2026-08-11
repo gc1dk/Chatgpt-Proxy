@@ -137,7 +137,7 @@ All options are environment variables:
 | `PORT`       | `3000`                 | Port the web UI and API listen on                        |
 | `HEADED`     | `0`                    | Set to `1` to show the browser window (useful for solving a captcha once) |
 | `PROFILE`    | `./profile`            | Chromium profile directory (persists cookies/session)    |
-| `TIMEOUT`    | `180000`               | Max ms to wait for a response before timing out          |
+| `TIMEOUT`    | `300000`               | Max ms to wait for a response before timing out          |
 | `STATE_FILE` | `./state.json`         | Where the current conversation URL is remembered         |
 | `NO_BROWSER` | `0`                    | Set to `1` to skip auto-opening the browser on start     |
 | `CHATS_FILE` | `./chats.json`         | Where saved chat transcripts are stored                  |
@@ -433,6 +433,8 @@ This project started because I didn't feel like waiting for usage limits to rese
 ## Updates
 
 Recent changes:
+
+- **v6** — Big messages fixed: the driver now **verifies the composer accepted the text** (read-back check with retries) and **waits for the send button to become enabled** before clicking — if ChatGPT's page rejects a huge story, you get an immediate clear error instead of a 3-minute silent wait that ended in "Timed out waiting for a response"; **huge replies stream live** — buffers over 60 KB throttle rendering and switch to a cheap plain-text append mode past 120 KB so the tab never freezes on the thinking dots; defaults bumped so slow starts work: driver `TIMEOUT` 300 000 ms and the client idle watchdog 5 minutes; 1 MB story covered by a new driver test (34 tests total).
 
 - **v5** — Testing round + fixes: **offline test suite** (`npm test`) — 30+ tests in three suites that run against a mock ChatGPT page with no account or network access: driver suite (composer fill, streaming deltas, history, multi-turn, oversized messages, multi-chat isolation), server suite (every API endpoint incl. SSE end-to-end, persistence, privacy), UI suite (headless browser exercising the real interface). Bugs found & fixed: consecutive identical replies timed out (fresh assistant element detection); tapping "new chat" then immediately sending erased the visible message (chat-id is now emitted as the first SSE event and new-chat no longer steals the view mid-send); lazy `HOME_URL` (was captured at module load, breaking env overrides for tests). New features: **chat export** (download any chat as `.md` from the sidebar), **optional `AUTH_TOKEN`** (API password; the UI prompts once and remembers it), `npm test` script.
 

@@ -227,15 +227,77 @@ class ChatGPTDriver {
       const baselineCount = await page
         .evaluate(() => document.querySelectorAll('[data-message-role="assistant"]').length)
         .catch(() => 0);
-      const filled = await page.evaluate((msg) => {
-        const ta = document.querySelector('[data-mobile-composer-prompt]');
-        if (!ta) return false;
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(ta, msg);
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }, message);
-      if (!filled) throw new Error('composer not found');
+
+      // Fill the composer and VERIFY the page accepted the value. Huge messages can
+      // be rejected by the page (React never committing the state) — detect that
+      // immediately instead of silently waiting for a reply that never comes.
+      let filled = false;
+      let fillLen = 0;
+      for (let attempt = 0; attempt < 3 && !filled; attempt++) {
+        const st = await page
+          .evaluate((msg) => {
+            const ta = document.querySelector('[data-mobile-composer-prompt]');
+            if (!ta) return { ok: false, reason: 'composer not found' };
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+            setter.call(ta, msg);
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            return { ok: ta.value === msg, len: ta.value.length };
+          }, message)
+          .catch(() => ({ ok: false, reason: 'composer evaluate failed' }));
+        if (st.reason) throw new Error(st.reason);
+        filled = st.ok;
+        fillLen = st.len || 0;
+        if (!filled) await sleep(600);
+      }
+      if (!filled) {
+        throw new Error(
+          'ChatGPT did not accept the message (' +
+            Math.round(message.length / 1024) +
+            ' KB — composer holds ' +
+            Math.round(fillLen / 1024) +
+            ' KB). It may be too large for the page — try splitting it.'
+        );
+      }
+
+      // Wait for the send button to become enabled (React committed the value).
+      // A button that never enables means the page rejected the message.
+      let sendReady = true;
+      const btnState = await page
+        .evaluate(() => {
+          const form = document.querySelector('[data-mobile-composer]');
+          const btn = form && form.querySelector('[data-composer-submit]');
+          if (!btn) return { exists: false };
+          if (btn.getAttribute('data-stop-generating')) return { exists: true, sending: true };
+          return { exists: true, disabled: !!btn.disabled };
+        })
+        .catch(() => ({ exists: false }));
+      if (btnState.exists && !btnState.sending) {
+        if (!btnState.disabled) {
+          sendReady = true;
+        } else {
+          sendReady = false;
+          for (let i = 0; i < 20; i++) {
+            await sleep(750);
+            const s = await page
+              .evaluate(() => {
+                const form = document.querySelector('[data-mobile-composer]');
+                const btn = form && form.querySelector('[data-composer-submit]');
+                if (!btn) return { exists: false };
+                if (btn.getAttribute('data-stop-generating')) return { exists: true, sending: true };
+                return { exists: true, disabled: !!btn.disabled };
+              })
+              .catch(() => ({ exists: false }));
+            if (!s.exists) break;
+            if (s.sending) { sendReady = true; break; }
+            if (!s.disabled) { sendReady = true; break; }
+          }
+        }
+      }
+      if (!sendReady) {
+        throw new Error(
+          'ChatGPT did not accept the message (send button stayed disabled). It may be too large — try splitting it.'
+        );
+      }
 
       await page.evaluate(
         ({ baseline, innerSel, resetMarker }) => {
