@@ -10,6 +10,7 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const HEADED = process.env.HEADED === '1';
 const PROFILE = process.env.PROFILE || path.join(__dirname, 'profile');
 const TIMEOUT = parseInt(process.env.TIMEOUT || '180000', 10);
+const JOB_WATCHDOG_MS = Math.max(360000, TIMEOUT * 2 + 60000);
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, 'state.json');
 const CHATS_FILE = process.env.CHATS_FILE || path.join(__dirname, 'chats.json');
 const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'settings.json');
@@ -17,7 +18,8 @@ const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'setting
 const driver = new ChatGPTDriver({ headed: HEADED, profileDir: PROFILE, timeoutMs: TIMEOUT, stateFile: STATE_FILE });
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 let jobSeq = 0;
@@ -83,22 +85,41 @@ function cleanMessages(messages, seed, memoryText) {
 }
 
 function buildMemoryMessage(messages) {
+  const MAX_PER_MSG = 20000;
+  const MAX_TOTAL = 200000;
   const lines = [
     'This is the full history of our ongoing chat. Remember ALL of it — every detail, every topic, every instruction — as context for this chat. Do not treat this as a question and do not reply with a summary. Just remember it all.',
     '',
     'Chat history:',
     '',
   ];
+  let total = 0;
+  let skipped = false;
   for (const m of messages) {
-    lines.push((m.role === 'user' ? 'user' : 'assistant') + ': ' + m.text);
+    let t = m.text || '';
+    let note = '';
+    if (t.length > MAX_PER_MSG) {
+      t = t.slice(0, MAX_PER_MSG);
+      note = '\n…(previous part too long to include)';
+    }
+    if (total + t.length > MAX_TOTAL) {
+      skipped = true;
+      break;
+    }
+    total += t.length;
+    lines.push((m.role === 'user' ? 'user' : 'assistant') + ': ' + t + note);
   }
+  if (skipped) lines.push('…(older history omitted to save space)');
   lines.push('');
   lines.push('You have remembered the entire history above. Acknowledge with exactly: OK');
   return lines.join('\n');
 }
 
 function sse(res, obj) {
-  res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  try {
+    if (res.writableEnded) return;
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  } catch {}
 }
 
 async function pump() {
@@ -111,6 +132,20 @@ async function pump() {
         try { job.res.end(); } catch {}
         continue;
       }
+      const watchdog = setTimeout(() => {
+        if (job.aborted) return;
+        job.aborted = true;
+        console.error('[server] job watchdog fired (took >', JOB_WATCHDOG_MS, 'ms)');
+        try { driver.stop(); } catch {}
+        try {
+          sse(job.res, {
+            type: 'error',
+            code: 'timeout',
+            message: 'ChatGPT did not finish in time. Try a shorter message, or try again later.',
+          });
+        } catch {}
+        try { job.res.end(); } catch {}
+      }, JOB_WATCHDOG_MS);
       try {
         await driver.start();
         sse(job.res, { type: 'queue', position: queue.length });
@@ -185,11 +220,14 @@ async function pump() {
           }
         } finally {
           clearInterval(saveTimer);
+          clearTimeout(watchdog);
         }
       } catch (e) {
+        clearTimeout(watchdog);
         console.error('[job error]', e);
         if (!job.aborted) sse(job.res, { type: 'error', code: 'internal', message: String((e && e.message) || e) });
       } finally {
+        clearTimeout(watchdog);
         try { job.res.end(); } catch {}
         const chat = getChat(job.chatId);
         if (chat) {

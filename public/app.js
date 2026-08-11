@@ -135,28 +135,154 @@
     return null;
   }
 
-  const previewState = { html: '', raw: '', filename: 'index.html' };
+  const artifacts = [];
+  let activeTab = 'chat';
+  let activeArtifactId = null;
+  let autoLatest = true;
+  let turnIndex = 0;
 
-  function openPreview(lang, code) {
-    const html = buildPreviewHtml(lang, code);
-    if (html == null) return;
-    const info = CODE_LANGS[lang] || CODE_DEFAULT;
-    previewState.html = html;
-    previewState.raw = code;
-    previewState.filename = info.filename;
-    const frame = $('#preview-frame');
-    frame.srcdoc = html;
-    $('#preview-title').textContent = info.filename + ' — live preview';
-    $('#preview-drawer').hidden = false;
-    document.body.classList.add('preview-open');
+  function previewableLang(lang) {
+    return lang === 'html' || lang === 'svg' || lang === 'css' || lang === 'js' || lang === 'javascript' || lang === 'jsx';
   }
 
-  function closePreview() {
-    $('#preview-drawer').hidden = true;
-    document.body.classList.remove('preview-open');
+  function kindOf(lang) {
+    if (previewableLang(lang)) return 'code';
+    return 'doc';
   }
+
+  function addArtifact(art) {
+    art.id = 'art-' + artifacts.length + '-' + Math.random().toString(36).slice(2, 7);
+    artifacts.push(art);
+    return art;
+  }
+
+  function harvestMessage(markdownEl, msgIndex) {
+    let pushed = false;
+    markdownEl.querySelectorAll('.code-block').forEach((b, i) => {
+      const lang = b._langId;
+      const kind = previewableLang(lang) ? 'code' : (lang === 'md' || lang === 'markdown') ? 'doc' : 'code';
+      const info = CODE_LANGS[lang] || CODE_DEFAULT;
+      addArtifact({ msgIndex, n: i, kind, lang, title: info.filename, content: b._rawCode });
+      b.dataset.artId = artifacts[artifacts.length - 1].id;
+      pushed = true;
+    });
+    return pushed;
+  }
+
+  function rebuildVersions() {
+    const sel = $('#code-versions');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const latest = document.createElement('option');
+    latest.value = 'latest';
+    latest.textContent = 'Latest (auto)';
+    sel.appendChild(latest);
+    for (let i = artifacts.length - 1; i >= 0; i--) {
+      const a = artifacts[i];
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      const kindLabel = a.kind === 'code' ? (a.lang || 'code').toUpperCase() : 'DOC';
+      opt.textContent = kindLabel + ' · ' + a.title + ' — turn ' + (a.msgIndex + 1);
+      sel.appendChild(opt);
+    }
+    if (autoLatest) {
+      sel.value = 'latest';
+    } else if (activeArtifactId && artifacts.some((a) => a.id === activeArtifactId)) {
+      sel.value = activeArtifactId;
+    } else {
+      autoLatest = true;
+      sel.value = 'latest';
+    }
+    $('#auto-badge').hidden = !autoLatest;
+    $('#code-tab-badge').hidden = artifacts.length === 0;
+    $('#code-tab-badge').textContent = String(artifacts.length);
+  }
+
+  function loadArtifact(art) {
+    const chip = $('#code-file-chip');
+    const fn = $('#code-filename');
+    if (!art) {
+      $('#code-editor').value = '';
+      $('#code-kind').textContent = '';
+      chip.hidden = true;
+      fn.textContent = '';
+      autoLatest = true;
+      showPreview(null, '');
+      return;
+    }
+    activeArtifactId = art.id;
+    $('#code-editor').value = art.content;
+    $('#code-kind').textContent = art.kind === 'code' ? (art.lang || 'code').toUpperCase() : 'MARKDOWN';
+    chip.hidden = false;
+    fn.textContent = art.title;
+    renderPreview(art.kind, art.lang, art.content);
+  }
+
+  function renderPreview(kind, lang, content) {
+    if (kind === 'code' && previewableLang(lang)) {
+      const html = buildPreviewHtml(lang, content);
+      showPreview('iframe', html);
+    } else if (kind === 'doc') {
+      const md = renderMarkdown(content);
+      showPreview('doc', md);
+    } else {
+      showPreview(null, '');
+    }
+  }
+
+  function showPreview(mode, payload) {
+    const frame = $('#code-frame');
+    const doc = $('#code-doc');
+    const empty = $('#code-preview-empty');
+    frame.hidden = mode !== 'iframe';
+    doc.hidden = mode !== 'doc';
+    empty.hidden = mode !== null;
+    if (mode === 'iframe') {
+      frame.srcdoc = payload;
+    } else if (mode === 'doc') {
+      doc.replaceChildren(payload);
+    }
+  }
+
+  function switchTab(which) {
+    activeTab = which;
+    const chat = $('#panel-chat');
+    const code = $('#panel-code');
+    chat.hidden = which !== 'chat';
+    code.hidden = which !== 'code';
+    $('#tab-chat').classList.toggle('active', which === 'chat');
+    $('#tab-code').classList.toggle('active', which === 'code');
+    if (which === 'code' && autoLatest) {
+      const latest = artifacts[artifacts.length - 1];
+      loadArtifact(latest || null);
+    }
+    if (which === 'code') $('#code-editor').focus();
+  }
+
+  function openBlockInCodeTab(lang, code) {
+    autoLatest = false;
+    const match = artifacts.find((a) => a.kind === 'code' && a.lang === lang && a.content === code);
+    let art = match;
+    if (!art) {
+      art = addArtifact({ msgIndex: -1, n: 0, kind: 'code', lang, title: (CODE_LANGS[lang] || CODE_DEFAULT).filename, content: code });
+    }
+    activeArtifactId = art.id;
+    rebuildVersions();
+    switchTab('code');
+    loadArtifact(art);
+  }
+
+  const PLAIN_THRESHOLD = 400000;
 
   function renderMarkdown(text) {
+    if (text && text.length > PLAIN_THRESHOLD) {
+      const container = document.createElement('div');
+      const pre = document.createElement('pre');
+      pre.className = 'plain-reply';
+      pre.textContent = text;
+      container.appendChild(pre);
+      return container;
+    }
     const raw = window.marked.parse(text || '', { async: false });
     const clean = window.DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
     const container = document.createElement('div');
@@ -187,7 +313,7 @@
         const pv = document.createElement('button');
         pv.className = 'code-btn';
         pv.textContent = 'Preview';
-        pv.addEventListener('click', () => openPreview(langId, rawCode));
+        pv.addEventListener('click', () => openBlockInCodeTab(langId, rawCode));
         actions.appendChild(pv);
       }
       const dl = document.createElement('button');
@@ -239,6 +365,8 @@
   function addAssistantMessage() {
     const msg = document.createElement('div');
     msg.className = 'msg assistant';
+    const myTurn = turnIndex;
+    turnIndex += 1;
     const avatar = document.createElement('div');
     avatar.className = 'assistant-avatar';
     avatar.innerHTML = BLOSSOM_SVG;
@@ -255,7 +383,7 @@
     msg.appendChild(body);
     messagesEl.appendChild(msg);
     scrollToBottom(true);
-    return { msg, markdown };
+    return { msg, markdown, msgIndex: myTurn };
   }
 
   function addActions(msgEl, text) {
@@ -276,11 +404,12 @@
   }
 
   function makeStreamingBubble() {
-    const { msg, markdown } = addAssistantMessage();
+    const { msg, markdown, msgIndex } = addAssistantMessage();
     msg.classList.add('streaming');
     const obj = {
       msg,
       markdown,
+      msgIndex,
       buf: '',
       ready: false,
       rafPending: false,
@@ -323,9 +452,11 @@
         msg.classList.remove('streaming');
         if (this.buf.trim()) {
           markdown.replaceChildren(renderMarkdown(this.buf));
-          const pb = markdown.querySelector('.code-block[data-previewable="1"]');
-          if (pb && !document.body.classList.contains('preview-open')) {
-            openPreview(pb._langId, pb._rawCode);
+          if (harvestMessage(markdown, this.msgIndex)) {
+            rebuildVersions();
+            if (activeTab === 'code' && autoLatest) {
+              loadArtifact(artifacts[artifacts.length - 1] || null);
+            }
           }
         } else {
           markdown.innerHTML = '';
@@ -391,6 +522,24 @@
     stopRow.appendChild(stopBtn);
     bubble.msg.appendChild(stopRow);
 
+    let lastEventAt = Date.now();
+    let reader = null;
+    const watchdog = setInterval(() => {
+      if (bubble.ready) {
+        clearInterval(watchdog);
+        return;
+      }
+      const idle = Date.now() - lastEventAt;
+      if (idle > 150000) {
+        clearInterval(watchdog);
+        bubble.error({
+          code: 'timeout',
+          message: 'No response from ChatGPT for 2.5 minutes — it may be stuck. Try again.',
+        });
+        if (reader) reader.cancel().catch(() => {});
+      }
+    }, 5000);
+
     try {
       const res = await api('/api/chat', {
         method: 'POST',
@@ -402,12 +551,13 @@
         try { errText = (await res.json()).error || errText; } catch (e) {}
         throw new Error(errText);
       }
-      const reader = res.body.getReader();
+      reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        lastEventAt = Date.now();
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n\n')) !== -1) {
@@ -416,6 +566,7 @@
           handleEvent(block, bubble);
         }
       }
+      clearInterval(watchdog);
       if (buf.trim()) handleEvent(buf, bubble);
       if (!bubble.ready) {
         bubble.finish();
@@ -424,8 +575,9 @@
       addActions(bubble.msg, bubble.buf);
       refreshChatList();
     } catch (e) {
+      clearInterval(watchdog);
       stopRow.remove();
-      bubble.error({ code: 'internal', message: String((e && e.message) || e) });
+      if (!bubble.ready) bubble.error({ code: 'internal', message: String((e && e.message) || e) });
     } finally {
       state.busy = false;
       updateControls();
@@ -543,6 +695,7 @@
     if (chatId === state.currentChatId) return;
     state.currentChatId = chatId;
     clearMessages();
+    artifacts.length = 0;
     welcome.hidden = true;
     try {
       const h = await api('/api/history?chatId=' + encodeURIComponent(chatId)).then((r) => r.json());
@@ -550,8 +703,9 @@
         for (const m of h.messages) {
           if (m.role === 'user') addUserMessage(m.text);
           else if (m.role === 'assistant') {
-            const { msg, markdown } = addAssistantMessage();
+            const { msg, markdown, msgIndex } = addAssistantMessage();
             if (m.text.trim()) markdown.replaceChildren(renderMarkdown(m.text));
+            harvestMessage(markdown, msgIndex);
             addActions(msg, m.text);
           }
         }
@@ -559,6 +713,7 @@
         welcome.hidden = false;
       }
     } catch (e) {}
+    rebuildVersions();
     refreshChatList();
   }
 
@@ -664,25 +819,74 @@
     if (e.target.id === 'settings-modal') $('#settings-modal').hidden = true;
   });
 
-  $('#preview-refresh').addEventListener('click', () => {
-    const frame = $('#preview-frame');
-    frame.srcdoc = '';
-    frame.srcdoc = previewState.html;
+  $('#tab-chat').addEventListener('click', () => switchTab('chat'));
+  $('#tab-code').addEventListener('click', () => switchTab('code'));
+
+  $('#code-versions').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === 'latest') {
+      autoLatest = true;
+      loadArtifact(artifacts[artifacts.length - 1] || null);
+    } else {
+      autoLatest = false;
+      const art = artifacts.find((a) => a.id === val);
+      loadArtifact(art || null);
+    }
   });
 
-  $('#preview-open').addEventListener('click', () => {
-    const blob = new Blob([previewState.html], { type: 'text/html;charset=utf-8' });
+  $('#code-run').addEventListener('click', () => {
+    const art = artifacts.find((a) => a.id === activeArtifactId);
+    const content = $('#code-editor').value;
+    if (art) {
+      art.content = content;
+      renderPreview(art.kind, art.lang, content);
+    } else if (content.trim()) {
+      renderPreview('doc', 'md', content);
+    }
+    const btn = $('#code-run');
+    btn.classList.add('run-flash');
+    setTimeout(() => btn.classList.remove('run-flash'), 600);
+  });
+
+  $('#code-copy').addEventListener('click', () => {
+    copyText($('#code-editor').value).then(() => {
+      const btn = $('#code-copy');
+      const label = btn.querySelector('span');
+      if (label) label.textContent = 'Copied';
+      else btn.textContent = 'Copied';
+      setTimeout(() => {
+        if (label) label.textContent = 'Copy';
+        else btn.textContent = 'Copy';
+      }, 1500);
+    });
+  });
+
+  $('#code-download').addEventListener('click', () => {
+    const art = artifacts.find((a) => a.id === activeArtifactId);
+    const content = $('#code-editor').value;
+    const lang = art ? art.lang : 'txt';
+    const info = CODE_LANGS[lang] || CODE_DEFAULT;
+    downloadText(content, info.filename);
+  });
+
+  $('#code-open').addEventListener('click', () => {
+    const art = artifacts.find((a) => a.id === activeArtifactId);
+    const lang = art ? art.lang : null;
+    const content = $('#code-editor').value;
+    if (lang && previewableLang(lang)) {
+      const html = buildPreviewHtml(lang, content);
+      if (html) {
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        window.open(URL.createObjectURL(blob), '_blank');
+        return;
+      }
+    }
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     window.open(URL.createObjectURL(blob), '_blank');
   });
 
-  $('#preview-download').addEventListener('click', () => {
-    downloadText(previewState.raw, previewState.filename);
-  });
-
-  $('#preview-close').addEventListener('click', closePreview);
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#preview-drawer').hidden) closePreview();
+  $('#code-editor').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('#code-run').click();
   });
 
   $('#settings-theme').addEventListener('click', () => {

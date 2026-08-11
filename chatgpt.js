@@ -9,6 +9,7 @@ const MOBILE_UA =
 const RESET_MARKER = '__CG_RESET__';
 const ASSISTANT_INNER = '[data-stream-target], [data-assistant-markdown], [data-message-copy]';
 const CHALLENGE_TITLE = 'Just a moment...';
+const MAX_COMPOSER_MSG = 5000000;
 
 class ChatGPTDriver {
   constructor({ headed = false, profileDir = null, timeoutMs = 180000, stateFile = null } = {}) {
@@ -211,11 +212,19 @@ class ChatGPTDriver {
     this.busy = true;
     if (onDelta) this._deltas[chatId] = onDelta;
     try {
+      if (message.length > MAX_COMPOSER_MSG) {
+        throw new Error(
+          'message is too large for the ChatGPT composer (' +
+            Math.round(message.length / 1024) +
+            ' KB). Split it into smaller messages.'
+        );
+      }
       const baseline = await this.getLastAssistantText(chatId);
       const filled = await page.evaluate((msg) => {
         const ta = document.querySelector('[data-mobile-composer-prompt]');
         if (!ta) return false;
-        ta.value = msg;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, msg);
         ta.dispatchEvent(new Event('input', { bubbles: true }));
         return true;
       }, message);
@@ -262,12 +271,42 @@ class ChatGPTDriver {
         { baseline, innerSel: ASSISTANT_INNER, resetMarker: RESET_MARKER }
       );
 
-      await page.evaluate(() => {
-        const form = document.querySelector('[data-mobile-composer]');
-        const btn = form && form.querySelector('[data-composer-submit]');
-        if (btn && typeof btn.click === 'function') btn.click();
-        else if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
-      });
+      const trySend = async () => {
+        await page.evaluate(() => {
+          const form = document.querySelector('[data-mobile-composer]');
+          const btn = form && form.querySelector('[data-composer-submit]');
+          if (btn && typeof btn.click === 'function') btn.click();
+          else if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
+        });
+      };
+      await trySend();
+      let sent = false;
+      for (let i = 0; i < 12; i++) {
+        await sleep(750);
+        const sentNow = await page
+          .evaluate((len) => {
+            const ta = document.querySelector('[data-mobile-composer-prompt]');
+            if (!ta || !ta.value) return true;
+            return ta.value.length !== len;
+          }, message.length)
+          .catch(() => false);
+        if (sentNow) {
+          sent = true;
+          break;
+        }
+      }
+      if (!sent) {
+        await page.evaluate(() => {
+          const ta = document.querySelector('[data-mobile-composer-prompt]');
+          if (ta) {
+            ta.focus();
+            ta.dispatchEvent(
+              new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })
+            );
+          }
+        });
+        await sleep(2000);
+      }
 
       const result = await this.waitForCompletion(baseline, page);
       await page

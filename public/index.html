@@ -48,25 +48,77 @@
       </div>
     </header>
 
-    <div class="messages" id="messages">
-      <div class="welcome" id="welcome">
-      <svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom-a" transform="rotate(60 1203 1203)"/><use href="#blossom-a" transform="rotate(120 1203 1203)"/><use href="#blossom-a" transform="rotate(180 1203 1203)"/><use href="#blossom-a" transform="rotate(240 1203 1203)"/><use href="#blossom-a" transform="rotate(300 1203 1203)"/></svg>
-        <h1>Where should we begin?</h1>
-        <p class="welcome-sub" id="welcome-sub">Your chats are private to this browser · no one else on the LAN can see them</p>
-      </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="chat" id="tab-chat">Chat</button>
+      <button class="tab" data-tab="code" id="tab-code">Code <span class="tab-badge" id="code-tab-badge" hidden></span></button>
     </div>
 
-    <div class="composer-wrap">
-      <div class="toolbar">
-        <span class="queue-info" id="queue-info"></span>
-      </div>
-      <form class="composer" id="composer">
-        <textarea id="input" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
-        <button type="submit" class="send-btn" id="send" aria-label="Send message" disabled>
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.17607 4.2585C9.63094 3.80374 10.3686 3.80387 10.8235 4.2585L15.262 8.696C15.5216 8.95561 15.5214 9.37671 15.262 9.63643C15.0023 9.89613 14.5813 9.89613 14.3216 9.63643L10.6653 5.98018V15.6247C10.6653 15.9919 10.3674 16.2896 10.0003 16.2898C9.63302 16.2898 9.33525 15.992 9.33525 15.6247V5.9792L5.679 9.63643C5.4193 9.89613 4.99729 9.89613 4.73759 9.63643C4.47857 9.37674 4.47827 8.9555 4.73759 8.696L9.17607 4.2585Z"/></svg>
-        </button>
-      </form>
-      <p class="disclaimer">ChatGPT is AI and can make mistakes. Chats may be reviewed and used to improve our AI models. The AI models belong to OpenAI — this project does not own, train, or modify them, and is not affiliated with OpenAI.</p>
+    <div class="tab-panels">
+      <section class="tab-panel chat-panel active" data-panel="chat" id="panel-chat">
+        <div class="messages" id="messages">
+          <div class="welcome" id="welcome">
+          <svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom-a" transform="rotate(60 1203 1203)"/><use href="#blossom-a" transform="rotate(120 1203 1203)"/><use href="#blossom-a" transform="rotate(180 1203 1203)"/><use href="#blossom-a" transform="rotate(240 1203 1203)"/><use href="#blossom-a" transform="rotate(300 1203 1203)"/></svg>
+            <h1>Where should we begin?</h1>
+            <p class="welcome-sub" id="welcome-sub">Your chats are private to this browser · no one else on the LAN can see them</p>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="toolbar">
+            <span class="queue-info" id="queue-info"></span>
+          </div>
+          <form class="composer" id="composer">
+            <textarea id="input" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+            <button type="submit" class="send-btn" id="send" aria-label="Send message" disabled>
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.17607 4.2585C9.63094 3.80374 10.3686 3.80387 10.8235 4.2585L15.262 8.696C15.5216 8.95561 15.5214 9.37671 15.262 9.63643C15.0023 9.89613 14.5813 9.89613 14.3216 9.63643L10.6653 5.98018V15.6247C10.6653 15.9919 10.3674 16.2896 10.0003 16.2898C9.63302 16.2898 9.33525 15.992 9.33525 15.6247V5.9792L5.679 9.63643C5.4193 9.89613 4.99729 9.89613 4.73759 9.63643C4.47857 9.37674 4.47827 8.9555 4.73759 8.696L9.17607 4.2585Z"/></svg>
+            </button>
+          </form>
+          <p class="disclaimer">ChatGPT is AI and can make mistakes. Chats may be reviewed and used to improve our AI models. The AI models belong to OpenAI — this project does not own, train, or modify them, and is not affiliated with OpenAI.</p>
+        </div>
+      </section>
+
+      <section class="tab-panel code-panel" data-panel="code" id="panel-code" hidden>
+        <div class="code-toolbar">
+          <div class="code-toolbar-group">
+            <select id="code-versions" class="code-versions" title="Pick a version" aria-label="Versions"></select>
+            <span class="code-file-chip" id="code-file-chip" hidden><span class="code-file-icon">&#9783;</span><span id="code-filename"></span></span>
+            <span class="code-kind" id="code-kind"></span>
+          </div>
+          <div class="code-toolbar-actions">
+            <span class="auto-badge" id="auto-badge" hidden title="Auto-syncs to the latest code from the chat"><span class="auto-dot"></span>Auto</span>
+            <button id="code-run" class="code-btn" title="Re-run / refresh preview">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2a1 1 0 0 1 1.52-.85l9 5.3a1 1 0 0 1 0 1.7l-9 5.3a1 1 0 0 1-1.52-.85V4.2Z"/></svg>
+              <span>Run</span>
+            </button>
+            <button id="code-copy" class="code-btn" title="Copy current file">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.25 2.25C5.46 2.25 4 3.71 4 5.5v8.25a.75.75 0 0 0 1.5 0V5.5c0-.97.78-1.75 1.75-1.75h5.25a.75.75 0 0 0 0-1.5H7.25ZM11 5.25c-1.8 0-3.25 1.46-3.25 3.25v7c0 1.8 1.46 3.25 3.25 3.25h4c1.8 0 3.25-1.46 3.25-3.25v-7c0-1.8-1.46-3.25-3.25-3.25h-4Zm-1.75 3.25c0-.97.78-1.75 1.75-1.75h4c.97 0 1.75.78 1.75 1.75v7c0 .97-.78 1.75-1.75 1.75h-4a1.75 1.75 0 0 1-1.75-1.75v-7Z"/></svg>
+              <span>Copy</span>
+            </button>
+            <button id="code-download" class="code-btn" title="Download current file">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a.75.75 0 0 1 .75.75v8.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V2.5A.75.75 0 0 1 10 1.75ZM3.25 16a.75.75 0 0 1 .75-.75h12a.75.75 0 0 1 0 1.5H4a.75.75 0 0 1-.75-.75Z"/></svg>
+              <span>Download</span>
+            </button>
+            <button id="code-open" class="code-btn" title="Open preview in a new tab">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3.25 6A3.25 3.25 0 0 1 6.5 2.75h1.5a.75.75 0 0 1 0 1.5H6.5A1.75 1.75 0 0 0 4.75 6v8c0 .97.78 1.75 1.75 1.75h8A1.75 1.75 0 0 0 16.25 14v-1.5a.75.75 0 0 1 1.5 0V14A3.25 3.25 0 0 1 14.5 17.25h-8A3.25 3.25 0 0 1 3.25 14V6Zm10.5-2.75a.75.75 0 0 1 .75.75v1.69l4.22-4.22a.75.75 0 1 1 1.06 1.06L15.56 6.75h1.69a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75v-3.5a.75.75 0 0 1 .75-.75Z"/></svg>
+              <span>Open</span>
+            </button>
+          </div>
+        </div>
+        <div class="code-workspace">
+          <div class="code-editor-wrap">
+            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code or document from the chat shows up here automatically. Edit it and press Run to preview. Use the Versions menu to jump to an earlier one."></textarea>
+          </div>
+          <div class="code-preview-wrap">
+            <div class="code-preview-empty" id="code-preview-empty">
+              <svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom2-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom2-a" transform="rotate(60 1203 1203)"/><use href="#blossom2-a" transform="rotate(120 1203 1203)"/><use href="#blossom2-a" transform="rotate(180 1203 1203)"/><use href="#blossom2-a" transform="rotate(240 1203 1203)"/><use href="#blossom2-a" transform="rotate(300 1203 1203)"/></svg>
+              <p>Preview will appear here</p>
+              <p class="sub">Code from the chat lands here — edit it and hit Run</p>
+            </div>
+            <iframe id="code-frame" class="code-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups" title="Live preview" hidden></iframe>
+            <div id="code-doc" class="code-doc markdown" hidden></div>
+          </div>
+        </div>
+      </section>
     </div>
   </main>
 </div>
@@ -112,30 +164,6 @@
       <p class="disclaimer">Responses come from OpenAI's ChatGPT. This project does not own, train, or modify the AI models and is not affiliated with OpenAI.</p>
     </div>
   </div>
-</div>
-
-<div class="preview-drawer" id="preview-drawer" hidden>
-  <div class="preview-head">
-    <div class="preview-title-wrap">
-      <span class="preview-dot"></span>
-      <span id="preview-title">Preview</span>
-    </div>
-    <div class="preview-actions">
-      <button id="preview-refresh" class="icon-btn" title="Refresh preview" aria-label="Refresh preview">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M15.3124 4.93317C14.9966 4.6002 14.4677 4.58616 14.1347 4.90195L13.1228 5.85386C11.6567 4.45304 9.59095 3.90002 7.62612 4.45499C4.79601 5.24742 3.01804 8.15454 3.81047 10.9846C4.6029 13.8148 7.51003 15.5927 10.3401 14.8003C12.4387 14.2097 13.8927 12.4036 14.1268 10.3756C14.171 10.0132 14.4821 9.74396 14.8445 9.78816C15.2069 9.83236 15.4761 10.1435 15.4319 10.5059C15.1392 12.9968 13.3474 15.2161 10.7168 15.9591C7.12435 16.9657 3.42812 14.7472 2.42148 11.1548C1.41485 7.56235 3.63332 3.86611 7.22579 2.85948C9.66003 2.16786 12.1808 2.79148 13.9662 4.48231L14.9966 3.51339C15.3296 3.1976 15.8585 3.21164 16.1743 3.54461C16.4901 3.87758 16.4761 4.40648 16.1431 4.72227L15.3124 4.93317Z"/><path d="M10 5.25a.75.75 0 0 1 .75.75v4.25l2.5 1.5a.75.75 0 1 1-.75 1.3l-2.94-1.76a.75.75 0 0 1-.31-.61V6a.75.75 0 0 1 .75-.75Z"/></svg>
-      </button>
-      <button id="preview-open" class="icon-btn" title="Open in new tab" aria-label="Open in new tab">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M14.75 1.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0V3.81L7.78 10.28a.75.75 0 0 1-1.06-1.06L12.19 2.75H6.75a.75.75 0 0 1 0-1.5h8Z"/><path d="M4 5.75A2.25 2.25 0 0 1 6.25 3.5h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 0-.75.75v8.5c0 .41.34.75.75.75h8.5c.41 0 .75-.34.75-.75v-1.5a.75.75 0 0 1 1.5 0v1.5A2.25 2.25 0 0 1 14.75 16.5h-8.5A2.25 2.25 0 0 1 4 14.25v-8.5Z"/></svg>
-      </button>
-      <button id="preview-download" class="icon-btn" title="Download code" aria-label="Download code">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a.75.75 0 0 1 .75.75v8.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V2.5A.75.75 0 0 1 10 1.75ZM3.25 16a.75.75 0 0 1 .75-.75h12a.75.75 0 0 1 0 1.5H4a.75.75 0 0 1-.75-.75Z"/></svg>
-      </button>
-      <button id="preview-close" class="icon-btn" title="Close preview" aria-label="Close preview">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L8.94 10l-4.72 4.72a.75.75 0 1 0 1.06 1.06L10 11.06l4.72 4.72a.75.75 0 1 0 1.06-1.06L11.06 10l4.72-4.72a.75.75 0 0 0-1.06-1.06L10 8.94 5.28 4.22Z"/></svg>
-      </button>
-    </div>
-  </div>
-  <iframe id="preview-frame" class="preview-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups" title="Code preview"></iframe>
 </div>
 
 <script src="vendor/marked.min.js"></script>
