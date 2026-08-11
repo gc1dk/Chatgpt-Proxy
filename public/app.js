@@ -41,8 +41,33 @@
 
   function api(path, opts) {
     opts = opts || {};
-    opts.headers = Object.assign({ 'X-Client-Id': CLIENT_ID }, opts.headers || {});
-    return fetch(path, opts);
+    let token = '';
+    try {
+      token = localStorage.getItem('cgpt-token') || '';
+    } catch (e) {}
+    opts.headers = Object.assign(
+      { 'X-Client-Id': CLIENT_ID },
+      token ? { Authorization: 'Bearer ' + token } : {},
+      opts.headers || {}
+    );
+    return fetch(path, opts).then((res) => {
+      if (res.status === 401 && !window.__cgAuthAsked) {
+        window.__cgAuthAsked = true;
+        const tok = window.prompt('This server requires a token. Enter it:');
+        window.__cgAuthAsked = false;
+        if (tok && tok.trim()) {
+          try {
+            localStorage.setItem('cgpt-token', tok.trim());
+          } catch (e) {}
+          opts.headers.Authorization = 'Bearer ' + tok.trim();
+          return fetch(path, opts).then((res2) => {
+            if (res2.status === 401) window.prompt('Token rejected.');
+            return res2;
+          });
+        }
+      }
+      return res;
+    });
   }
 
   function copyText(text) {
@@ -412,8 +437,10 @@
       msgIndex,
       buf: '',
       ready: false,
+      failed: false,
       rafPending: false,
       setThinking() {
+        if (this.failed) return;
         markdown.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
       },
       render() {
@@ -435,12 +462,13 @@
         });
       },
       append(t) {
-        if (t) {
+        if (t && !this.failed) {
           this.buf += t;
           this.renderSoon();
         }
       },
       reset() {
+        if (this.failed) return;
         this.buf = '';
         this.rafPending = false;
         msg.classList.remove('has-text');
@@ -465,6 +493,7 @@
       },
       error(ev) {
         this.ready = true;
+        this.failed = true;
         msg.classList.remove('streaming');
         markdown.innerHTML = '';
         const box = document.createElement('div');
@@ -572,7 +601,9 @@
         bubble.finish();
       }
       stopRow.remove();
-      addActions(bubble.msg, bubble.buf);
+      if (bubble.buf.trim() && !bubble.failed) {
+        addActions(bubble.msg, bubble.buf);
+      }
       refreshChatList();
     } catch (e) {
       clearInterval(watchdog);
@@ -596,6 +627,11 @@
       if (!ev || !ev.type) continue;
       if (ev.type === 'delta') {
         bubble.append(ev.text || '');
+      } else if (ev.type === 'chat') {
+        if (ev.id && ev.id !== state.currentChatId) {
+          state.currentChatId = ev.id;
+          refreshChatList();
+        }
       } else if (ev.type === 'reset') {
         bubble.reset();
       } else if (ev.type === 'queue') {
@@ -650,6 +686,17 @@
             body: JSON.stringify({ chatId: chat.id, title: next.trim() }),
           }).then(() => refreshChatList()).catch(() => {});
         }
+      });
+      const expBtn = document.createElement('button');
+      expBtn.className = 'chat-item-btn';
+      expBtn.title = 'Export chat (.md)';
+      expBtn.innerHTML = DOWNLOAD_SVG;
+      expBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        api('/api/export?chatId=' + encodeURIComponent(chat.id))
+          .then((r) => (r.ok ? r.text() : Promise.reject(new Error('export failed'))))
+          .then((text) => downloadText(text, (chat.title || 'chat').slice(0, 60) + '.md'))
+          .catch(() => {});
       });
       const delBtn = document.createElement('button');
       delBtn.className = 'chat-item-btn';
@@ -762,6 +809,10 @@
     try {
       const r = await api('/api/new-chat', { method: 'POST' }).then((res) => res.json());
       if (r.ok && r.id) {
+        if (state.busy) {
+          refreshChatList();
+          return;
+        }
         state.currentChatId = r.id;
         clearMessages();
         welcome.hidden = false;

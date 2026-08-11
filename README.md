@@ -54,6 +54,10 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Web search** — use ChatGPT's own built-in web search toggle in the chat (no custom reimplementation)
 - **Markdown + syntax highlighting** — responses render markdown, code blocks, copy buttons, and a download button per reply
 - **ChatGPT-style interface** — clean 1:1 UI: logo, sidebar, theme toggle, settings, streaming bubbles; no ads, no paid features
+- **Code tab** — every code block in a reply becomes an artifact (per language, version picker, live preview, run, download, copy) collected in a dedicated Code workspace
+- **Chat export** — download any chat as a Markdown file (`.md`) from the sidebar
+- **Optional auth token** — set `AUTH_TOKEN` to require a password for all API calls (the UI asks for it once and remembers it)
+- **Offline test suite** — `npm test` runs 30+ automated tests (driver, API, UI) against a mock ChatGPT page, no real ChatGPT account or network access needed
 - **Settings** — theme, system prompt, and a "clear cookies / fresh session" button
 - **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
 - **Private per browser** — each browser gets its own chat list and history (auto-assigned client id); no one else on your LAN can see your chats
@@ -138,6 +142,7 @@ All options are environment variables:
 | `NO_BROWSER` | `0`                    | Set to `1` to skip auto-opening the browser on start     |
 | `CHATS_FILE` | `./chats.json`         | Where saved chat transcripts are stored                  |
 | `SETTINGS_FILE` | `./settings.json`   | Where settings (system prompt) are stored                |
+| `AUTH_TOKEN`  | *(none)*                | If set, every `/api/*` request must include `Authorization: Bearer <token>` (or `?token=`). The web UI prompts for it once and remembers it in localStorage |
 
 **Examples**
 
@@ -145,6 +150,7 @@ All options are environment variables:
 PORT=8080 npm start
 HEADED=1 npm start          # solve a Cloudflare captcha once, then it is remembered in ./profile
 TIMEOUT=300000 npm start
+AUTH_TOKEN="my-secret" npm start   # protect the API for LAN/public deployments
 ```
 
 **Using a `.env` file**
@@ -209,6 +215,10 @@ Body: `{ "chatId": "...", "title": "..." }` — renames the chat (title capped a
 ### `POST /api/chat-delete`
 
 Body: `{ "chatId": "..." }` — deletes the chat, closes its browser tab, and clears the active chat if it was active. Chats owned by other clients are rejected with `404`.
+
+### `GET /api/export?chatId=...`
+
+Downloads the full chat as a Markdown file (`text/markdown` attachment). Only the owner client can export a chat; anyone else gets `404`.
 
 ### `GET /api/settings` / `POST /api/settings`
 
@@ -373,10 +383,13 @@ Click **New chat** in the sidebar, or delete `./profile` and restart.
 - [x] Stop generation
 - [x] Auto-open browser to LAN URL
 - [x] Cross-restart model memory (transcript re-fed as hidden context)
+- [x] Code tab (artifacts, previews, versions, auto-sync)
+- [x] Chat export (Markdown download)
+- [x] Optional auth token for public deployments
+- [x] Extended test coverage (mock ChatGPT page, driver/API/UI suites)
 - [x] MIT License
 - [ ] Automatic driver-selector self-healing
-- [ ] Authentication for public deployments
-- [ ] Extended test coverage
+- [ ] Multi-user accounts (beyond per-browser client ids)
 
 Items may be added, removed, or changed as development continues.
 
@@ -420,6 +433,8 @@ This project started because I didn't feel like waiting for usage limits to rese
 ## Updates
 
 Recent changes:
+
+- **v5** — Testing round + fixes: **offline test suite** (`npm test`) — 30+ tests in three suites that run against a mock ChatGPT page with no account or network access: driver suite (composer fill, streaming deltas, history, multi-turn, oversized messages, multi-chat isolation), server suite (every API endpoint incl. SSE end-to-end, persistence, privacy), UI suite (headless browser exercising the real interface). Bugs found & fixed: consecutive identical replies timed out (fresh assistant element detection); tapping "new chat" then immediately sending erased the visible message (chat-id is now emitted as the first SSE event and new-chat no longer steals the view mid-send); lazy `HOME_URL` (was captured at module load, breaking env overrides for tests). New features: **chat export** (download any chat as `.md` from the sidebar), **optional `AUTH_TOKEN`** (API password; the UI prompts once and remembers it), `npm test` script.
 
 - **v4** — No more invisible hangs: server-side **job watchdog** force-fails any request that runs past its deadline (returns a clear timeout error and stops the browser generation), each job now has a hard time budget so the queue can never wedge; hardened SSE writer (a dead connection can no longer crash a job); **client-side idle watchdog** — if the stream goes silent for 2.5 minutes the UI surfaces an error instead of spinning forever; huge messages protected end-to-end (composer fill now uses the React-native value setter + send verification with an Enter-key fallback, plus a friendly error past 5 MB, while the express body limit stays at 20 MB); memory context feeds are capped (20 KB per message / 200 KB total) so mega-chats can't stall the model; replies larger than 400 KB render as plain text instead of freezing the tab on markdown render.
 

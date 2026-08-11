@@ -14,12 +14,22 @@ const JOB_WATCHDOG_MS = Math.max(360000, TIMEOUT * 2 + 60000);
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, 'state.json');
 const CHATS_FILE = process.env.CHATS_FILE || path.join(__dirname, 'chats.json');
 const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'settings.json');
+const AUTH_TOKEN = process.env.AUTH_TOKEN || null;
 
 const driver = new ChatGPTDriver({ headed: HEADED, profileDir: PROFILE, timeoutMs: TIMEOUT, stateFile: STATE_FILE });
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
+
+app.use('/api', (req, res, next) => {
+  if (!AUTH_TOKEN) return next();
+  const bearer = String(req.header('authorization') || '');
+  const queryToken = String((req.query && req.query.token) || '');
+  if (bearer === 'Bearer ' + AUTH_TOKEN || queryToken === AUTH_TOKEN) return next();
+  res.status(401).json({ error: 'unauthorized' });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 let jobSeq = 0;
@@ -145,7 +155,10 @@ async function pump() {
           });
         } catch {}
         try { job.res.end(); } catch {}
+        if (resolveAborted) resolveAborted();
       }, JOB_WATCHDOG_MS);
+      let resolveAborted;
+      const abortedPromise = new Promise((r) => { resolveAborted = r; });
       try {
         await driver.start();
         sse(job.res, { type: 'queue', position: queue.length });
@@ -191,29 +204,32 @@ async function pump() {
             saveStore();
           }
           let streamedText = '';
-          const result = await driver.submit({
-            chatId: job.chatId,
-            message: job.message,
-            onDelta: (d) => {
-              if (job.aborted) return;
-              if (d === RESET_MARKER) {
-                streamedText = '';
-                sse(job.res, { type: 'reset' });
-              } else if (d) {
-                streamedText += d;
-                sse(job.res, { type: 'delta', text: d });
-              }
-            },
-          });
+          const result = await Promise.race([
+            driver.submit({
+              chatId: job.chatId,
+              message: job.message,
+              onDelta: (d) => {
+                if (job.aborted) return;
+                if (d === RESET_MARKER) {
+                  streamedText = '';
+                  sse(job.res, { type: 'reset' });
+                } else if (d) {
+                  streamedText += d;
+                  sse(job.res, { type: 'delta', text: d });
+                }
+              },
+            }),
+            abortedPromise.then(() => null),
+          ]);
           const cleanText = (t) => t.replace(/^I\n/, '').replace(/\nI\n/g, '\n');
-          const finalText = cleanText(streamedText.trim() || (result.text || ''));
+          const finalText = cleanText(streamedText.trim() || (result && result.text) || '');
           const c = getChat(job.chatId);
           if (c && finalText) {
             c.messages.push({ role: 'assistant', text: finalText });
             saveStore();
           }
           if (job.aborted) continue;
-          if (result.error) {
+          if (result && result.error) {
             sse(job.res, { type: 'error', code: result.error, retryAfter: result.retryAfter || null, text: finalText });
           } else {
             sse(job.res, { type: 'done', text: finalText });
@@ -253,6 +269,7 @@ function startChatStream(req, res, chatId, message) {
     'X-Accel-Buffering': 'no',
   });
   res.flushHeaders && res.flushHeaders();
+  sse(res, { type: 'chat', id: chatId });
   const job = { id: ++jobSeq, chatId, message, res, aborted: false };
   req.on('aborted', () => {
     job.aborted = true;
@@ -382,11 +399,34 @@ app.get('/api/history', async (req, res) => {
   res.json({ messages: deduped });
 });
 
-app.get('/api/settings', (req, res) => {
-  res.json({ systemPrompt: settings.systemPrompt || '' });
+app.get('/api/export', (req, res) => {
+  const clientId = clientIdOf(req);
+  const chatId = String(req.query.chatId || '').trim();
+  const chat = chatId ? getChat(chatId) : null;
+  if (!chat || chat.owner !== clientId) {
+    res.status(404).json({ error: 'chat not found' });
+    return;
+  }
+  const title = chat.title || 'New chat';
+  const blocks = ['# ' + title, ''];
+  for (const m of chat.messages || []) {
+    if (m.role === 'user') blocks.push('## You', '', m.text || '', '');
+    else if (m.role === 'assistant') blocks.push('## ChatGPT', '', m.text || '', '');
+  }
+  const safe =
+    title
+      .replace(/[^a-z0-9-_ ]/gi, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 60) || 'chat';
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '.md"');
+  res.send(blocks.join('\n'));
 });
 
-app.post('/api/settings', (req, res) => {
+app.get('/api/settings', (req, res) => {
+  res.json({ systemPrompt: settings.systemPrompt || '' });
+});app.post('/api/settings', (req, res) => {
   const systemPrompt = String((req.body && req.body.systemPrompt) || '').trim();
   settings.systemPrompt = systemPrompt;
   saveSettings();

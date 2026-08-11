@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const HOME_URL = 'https://chatgpt.com/';
+const homeUrl = () => process.env.HOME_URL || 'https://chatgpt.com/';
 const MOBILE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 const RESET_MARKER = '__CG_RESET__';
@@ -79,12 +79,12 @@ class ChatGPTDriver {
           return;
         }
         console.log('[chatgpt] saved conversation unreachable, falling back to home');
-        await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(homeUrl(), { waitUntil: 'domcontentloaded', timeout: 60000 });
       } catch {
-        await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+        await page.goto(homeUrl(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
       }
     } else {
-      await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.goto(homeUrl(), { waitUntil: 'domcontentloaded', timeout: 60000 });
     }
     await this.waitForComposer(120000, page);
   }
@@ -206,7 +206,11 @@ class ChatGPTDriver {
   }
 
   async submit({ chatId, message, onDelta = null }) {
-    if (this.busy) throw new Error('browser is busy');
+    const deadline = Date.now() + this.timeoutMs;
+    while (this.busy) {
+      if (Date.now() > deadline) throw new Error('browser is busy');
+      await sleep(750);
+    }
     const page = await this.ensureChat(chatId);
     this.page = page;
     this.busy = true;
@@ -220,6 +224,9 @@ class ChatGPTDriver {
         );
       }
       const baseline = await this.getLastAssistantText(chatId);
+      const baselineCount = await page
+        .evaluate(() => document.querySelectorAll('[data-message-role="assistant"]').length)
+        .catch(() => 0);
       const filled = await page.evaluate((msg) => {
         const ta = document.querySelector('[data-mobile-composer-prompt]');
         if (!ta) return false;
@@ -286,6 +293,8 @@ class ChatGPTDriver {
         const sentNow = await page
           .evaluate((len) => {
             const ta = document.querySelector('[data-mobile-composer-prompt]');
+            const stopBtn = document.querySelector('[data-composer-submit][data-stop-generating]');
+            if (stopBtn) return true;
             if (!ta || !ta.value) return true;
             return ta.value.length !== len;
           }, message.length)
@@ -296,19 +305,24 @@ class ChatGPTDriver {
         }
       }
       if (!sent) {
-        await page.evaluate(() => {
-          const ta = document.querySelector('[data-mobile-composer-prompt]');
-          if (ta) {
-            ta.focus();
-            ta.dispatchEvent(
-              new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })
-            );
-          }
-        });
-        await sleep(2000);
+        const alreadySending = await page
+          .evaluate(() => !!document.querySelector('[data-composer-submit][data-stop-generating]'))
+          .catch(() => false);
+        if (!alreadySending) {
+          await page.evaluate(() => {
+            const ta = document.querySelector('[data-mobile-composer-prompt]');
+            if (ta) {
+              ta.focus();
+              ta.dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })
+              );
+            }
+          });
+          await sleep(2000);
+        }
       }
 
-      const result = await this.waitForCompletion(baseline, page);
+      const result = await this.waitForCompletion(baseline, page, baselineCount);
       await page
         .evaluate(() => {
           if (window.__cgObs) {
@@ -324,9 +338,10 @@ class ChatGPTDriver {
     }
   }
 
-  async waitForCompletion(baseline, page) {
+  async waitForCompletion(baseline, page, baselineCount = 0) {
     const started = Date.now();
     let lastText = '';
+    let lastCount = 0;
     let stable = 0;
     let gateTries = 0;
     while (Date.now() - started < this.timeoutMs) {
@@ -346,6 +361,7 @@ class ChatGPTDriver {
           }
           return {
             text,
+            count: els.length,
             streaming: !!streamingEl,
             submitting: !!stopBtn,
             gate: !!gatePanel,
@@ -375,9 +391,11 @@ class ChatGPTDriver {
         return { error: 'rate_limited', retryAfter: state.retryAfter, text: state.text.trim() };
       }
 
-      if (state.text !== baseline && state.text) {
-        if (state.text !== lastText) {
+      const fresh = state.text !== baseline || state.count > baselineCount;
+      if (fresh && state.text) {
+        if (state.text !== lastText || state.count !== lastCount) {
           lastText = state.text;
+          lastCount = state.count;
           stable = 0;
         } else {
           stable += 1;
@@ -397,13 +415,13 @@ class ChatGPTDriver {
     } catch {}
     for (const page of Object.values(this.pages)) {
       try {
-        await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(homeUrl(), { waitUntil: 'domcontentloaded', timeout: 60000 });
         await this.waitForComposer(90000, page);
       } catch {}
     }
     if (this._initialPage) {
       try {
-        await this._initialPage.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await this._initialPage.goto(homeUrl(), { waitUntil: 'domcontentloaded', timeout: 60000 });
         await this.waitForComposer(90000, this._initialPage);
       } catch {}
     }
