@@ -256,3 +256,63 @@ test('GET /api/export rejects another client chat with 404', async () => {
   const r = await jsonReq('GET', `${base}/api/export?chatId=${created.body.id}`, undefined, { 'X-Client-Id': cid() });
   assert.equal(r.status, 404);
 });
+
+test('POST /v1/chat/completions returns an OpenAI-style non-stream reply', async () => {
+  const r = await jsonReq('POST', `${base}/v1/chat/completions`, {
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'openai hello' }],
+    stream: false,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.object, 'chat.completion');
+  assert.ok(r.body.choices[0].message.content.includes('mock'), 'content: ' + JSON.stringify(r.body));
+});
+
+test('POST /v1/chat/completions streams OpenAI chunks', async () => {
+  const r = await sseReq('POST', `${base}/v1/chat/completions`, {
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: 'openai stream' }],
+    stream: true,
+  });
+  assert.equal(r.status, 200);
+  const chunks = r.events.filter((e) => e.object === 'chat.completion.chunk');
+  assert.ok(chunks.length >= 2, 'expected content + stop chunks: ' + JSON.stringify(r.events));
+  assert.ok(chunks.some((c) => c.choices[0].delta.content), 'expected a content delta');
+  const last = chunks[chunks.length - 1];
+  assert.equal(last.choices[0].finish_reason, 'stop');
+});
+
+test('POST /v1/chat/completions reuses session by user id', async () => {
+  const user = 'session-' + Math.random().toString(36).slice(2, 8);
+  const a = await jsonReq('POST', `${base}/v1/chat/completions`, {
+    messages: [{ role: 'user', content: 'first in session' }],
+    user,
+  });
+  assert.equal(a.status, 200);
+  const b = await jsonReq('POST', `${base}/v1/chat/completions`, {
+    messages: [{ role: 'user', content: 'second in session' }],
+    user,
+  });
+  assert.equal(b.status, 200);
+  const chats = await jsonReq('GET', `${base}/api/chats`);
+  const apiChats = chats.body.chats.filter((c) => c.title === 'first in session');
+  assert.equal(apiChats.length, 1, 'session should reuse one chat');
+});
+
+test('POST /v1/chat/completions rejects empty messages', async () => {
+  const r = await jsonReq('POST', `${base}/v1/chat/completions`, { messages: [] });
+  assert.equal(r.status, 400);
+});
+
+test('GET /api/update-info returns version info', async () => {
+  const r = await jsonReq('GET', `${base}/api/update-info`);
+  assert.equal(r.status, 200);
+  assert.equal(typeof r.body.current, 'string');
+});
+
+test('login/signup are disabled when AUTH_TOKEN is not set', async () => {
+  const login = await jsonReq('POST', `${base}/api/login`, { username: 'x', password: 'y' });
+  assert.equal(login.status, 400);
+  const signup = await jsonReq('POST', `${base}/api/signup`, { username: 'x', password: 'y' });
+  assert.equal(signup.status, 400);
+});

@@ -74,6 +74,59 @@ const HTML = `<!doctype html>
 
 let conversations = [];
 
+const BARE_HTML = `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Mock ChatGPT</title></head>
+<body>
+  <div id="conv"></div>
+  <div class="composer">
+    <textarea id="chat-input"></textarea>
+    <button type="submit" id="send-btn">Send</button>
+  </div>
+  <script>
+    const conv = document.getElementById('conv');
+    const ta = document.getElementById('chat-input');
+    const btn = document.getElementById('send-btn');
+    btn.disabled = true;
+    ta.addEventListener('input', () => {
+      btn.disabled = !ta.value;
+    });
+    function addMessage(role, text, streaming) {
+      const el = document.createElement('div');
+      el.setAttribute('data-message-role', role);
+      if (streaming) el.setAttribute('data-message-streaming', 'true');
+      const inner = document.createElement('div');
+      inner.setAttribute('data-message-copy', '');
+      inner.textContent = text;
+      el.appendChild(inner);
+      conv.appendChild(el);
+      return el;
+    }
+    btn.addEventListener('click', () => {
+      const text = ta.value;
+      if (!text) return;
+      addMessage('user', text);
+      ta.value = '';
+      const el = addMessage('assistant', 'I', true);
+      btn.setAttribute('data-stop-generating', 'true');
+      const tokens = ["\\nI'm", ' the', ' bare', ' reply'];
+      let i = 0;
+      const timer = setInterval(() => {
+        if (i >= tokens.length) {
+          clearInterval(timer);
+          el.removeAttribute('data-message-streaming');
+          btn.removeAttribute('data-stop-generating');
+          return;
+        }
+        const inner = el.children[0];
+        inner.textContent = (inner.textContent || '') + tokens[i++];
+      }, 60);
+    });
+    window.__mock = { addMessage };
+  </script>
+</body>
+</html>`;
+
 function booleq(v) {
   return v === '1' || v === 'true';
 }
@@ -81,8 +134,9 @@ function booleq(v) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'GET' && url.pathname === '/') {
+    const bare = url.searchParams.get('bare') === '1';
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(HTML);
+    res.end(bare ? BARE_HTML : HTML);
     return;
   }
   if (req.method === 'GET' && url.pathname === '/mock-reset') {

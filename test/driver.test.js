@@ -34,6 +34,7 @@ async function makeDriver(overrides = {}) {
     headed: false,
     profileDir,
     timeoutMs: 20000,
+    selectorsFile: path.join(profileDir, 'selectors.json'),
     ...overrides,
   });
   await driver.start();
@@ -121,4 +122,32 @@ test('two chats get independent pages', async () => {
   const bUsers = b.filter((m) => m.role === 'user').map((m) => m.text);
   assert.ok(aUsers.includes('first chat') && !aUsers.includes('second chat'));
   assert.ok(bUsers.includes('second chat') && !bUsers.includes('first chat'));
+});
+
+test('self-healing: works on a bare page (no known selectors) and caches them', async () => {
+  const healProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-heal-test-'));
+  const selFile = path.join(healProfile, 'selectors.json');
+  const healDriver = new ChatGPTDriver({
+    headed: false,
+    profileDir: healProfile,
+    timeoutMs: 20000,
+    selectorsFile: selFile,
+  });
+  try {
+    process.env.HOME_URL = `http://127.0.0.1:${port}/?bare=1`;
+    await healDriver.start();
+    const result = await healDriver.submit({ chatId: 'bare1', message: 'heal me' });
+    assert.equal(result.error, null, 'bare page should still send: ' + JSON.stringify(result));
+    assert.ok(result.text.includes('bare'), 'got: ' + result.text);
+    const cached = JSON.parse(fs.readFileSync(selFile, 'utf8'));
+    assert.equal(cached.composer, 'textarea', 'composer heuristic should be cached: ' + JSON.stringify(cached));
+    assert.ok(
+      cached.submit === 'button[type="submit"]',
+      'submit heuristic should be cached: ' + JSON.stringify(cached)
+    );
+  } finally {
+    delete process.env.HOME_URL;
+    await healDriver.dispose().catch(() => {});
+    fs.rmSync(healProfile, { recursive: true, force: true });
+  }
 });

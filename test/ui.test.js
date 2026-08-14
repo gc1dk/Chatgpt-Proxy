@@ -126,18 +126,23 @@ test('code tab badge + artifact appears after a code reply', async () => {
   assert.equal(badge, '1', 'badge should show exactly one artifact (badge=' + badge + ')');
 });
 
-test('code tab shows editor + preview area', async () => {
+test('boot overlay hides once ready', async () => {
+  await page.waitForFunction(() => document.getElementById('boot-overlay').hidden, null, { timeout: 15000 });
+  assert.ok(true, 'boot overlay should hide after the app connects');
+});
+
+test('code tab shows editor (preview pane removed)', async () => {
   await page.locator('#tab-code').click();
   await page.waitForTimeout(400);
   const editor = await page.locator('#code-editor').isVisible();
-  const preview = await page.locator('.code-preview-wrap').isVisible();
+  const preview = await page.locator('.code-preview-wrap').count();
   assert.ok(editor, 'code editor should be visible');
-  assert.ok(preview, 'preview wrap should be visible');
+  assert.equal(preview, 0, 'preview wrap should be removed');
 });
 
 test('settings modal opens and closes', async () => {
   await page.locator('#tab-chat').click();
-  await page.locator('.icon-btn').first().click();
+  await page.locator('#settings-btn').click();
   await page.waitForTimeout(300);
   const modal = await page.locator('#settings-modal').isVisible();
   assert.ok(modal, 'settings modal should open');

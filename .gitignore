@@ -5,3 +5,8 @@ profile/
 state.json
 chats.json
 settings.json
+
+web.env
+users.json
+clients.json
+selectors.json

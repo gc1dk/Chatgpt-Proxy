@@ -24,6 +24,7 @@
     busy: false,
     lastPrompt: '',
     currentChatId: null,
+    loadedChatId: null,
   };
 
   const CLIENT_ID = (() => {
@@ -39,35 +40,169 @@
     }
   })();
 
+  // Account session: when logged in, the account id ('u-<username>') becomes the
+  // chat owner, so chats follow the account across browsers and devices.
+  let session = null;
+  try {
+    const raw = localStorage.getItem('cgpt-session');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.clientId && parsed.clientToken && parsed.username) session = parsed;
+    }
+  } catch (e) {}
+
+  const activeClientId = () => (session ? session.clientId : CLIENT_ID);
+
+  let loginResolve = null;
+  let loginMode = 'login';
+
+  function openLogin() {
+    boot(50, 'Log in to continue');
+    $('#login-modal').hidden = false;
+    $('#login-title').textContent = loginMode === 'signup' ? 'Create an account' : 'Log in';
+    $('#login-submit').textContent = loginMode === 'signup' ? 'Create account' : 'Log in';
+    $('#login-error').textContent = '';
+    $('#login-username').focus();
+    return new Promise((resolve) => {
+      loginResolve = resolve;
+    });
+  }
+
+  function closeLogin(ok) {
+    $('#login-modal').hidden = true;
+    if (loginResolve) {
+      loginResolve(ok);
+      loginResolve = null;
+    }
+  }
+
+  async function submitLogin() {
+    const username = $('#login-username').value.trim();
+    const password = $('#login-password').value;
+    if (!username || !password) {
+      $('#login-error').textContent = 'Enter a username and password.';
+      return;
+    }
+    const btn = $('#login-submit');
+    btn.disabled = true;
+    $('#login-error').textContent = '';
+    try {
+      const res = await fetch('/api/' + (loginMode === 'signup' ? 'signup' : 'login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.clientToken) {
+        session = { username: data.clientId.replace(/^u-/, ''), clientId: data.clientId, clientToken: data.clientToken };
+        try {
+          localStorage.setItem('cgpt-session', JSON.stringify(session));
+        } catch (e) {}
+        $('#login-password').value = '';
+        closeLogin(true);
+      } else {
+        $('#login-error').textContent = data.error || 'Login failed (' + res.status + ')';
+        if (data.error === 'username already exists') {
+          loginMode = 'login';
+          $('#login-title').textContent = 'Log in';
+          $('#login-submit').textContent = 'Log in';
+        }
+      }
+    } catch (e) {
+      $('#login-error').textContent = 'Server unreachable.';
+    }
+    btn.disabled = false;
+  }
+
   function api(path, opts) {
     opts = opts || {};
     let token = '';
     try {
       token = localStorage.getItem('cgpt-token') || '';
     } catch (e) {}
-    opts.headers = Object.assign(
-      { 'X-Client-Id': CLIENT_ID },
+    const clientToken = session ? session.clientToken : '';
+    const headers = Object.assign(
+      { 'X-Client-Id': activeClientId() },
+      clientToken ? { 'X-Client-Token': clientToken } : {},
       token ? { Authorization: 'Bearer ' + token } : {},
       opts.headers || {}
     );
-    return fetch(path, opts).then((res) => {
-      if (res.status === 401 && !window.__cgAuthAsked) {
-        window.__cgAuthAsked = true;
-        const tok = window.prompt('This server requires a token. Enter it:');
-        window.__cgAuthAsked = false;
-        if (tok && tok.trim()) {
-          try {
-            localStorage.setItem('cgpt-token', tok.trim());
-          } catch (e) {}
-          opts.headers.Authorization = 'Bearer ' + tok.trim();
-          return fetch(path, opts).then((res2) => {
-            if (res2.status === 401) window.prompt('Token rejected.');
-            return res2;
-          });
+    const attempt = (h) => fetch(path, Object.assign({}, opts, { headers: Object.assign({}, headers, h) }));
+
+    function needMaster() {
+      if (window.__cgAuthAsked) return null;
+      window.__cgAuthAsked = true;
+      const tok = window.prompt('This server requires a master token. Enter it (or use a user account below):');
+      window.__cgAuthAsked = false;
+      if (tok && tok.trim()) {
+        try {
+          localStorage.setItem('cgpt-token', tok.trim());
+        } catch (e) {}
+        return tok.trim();
+      }
+      return null;
+    }
+
+    function registerClient(master) {
+      return fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Client-Id': activeClientId(), Authorization: 'Bearer ' + master },
+        body: JSON.stringify({ clientId: activeClientId() }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.clientToken) {
+            session = { username: null, clientId: activeClientId(), clientToken: res.clientToken };
+            try {
+              localStorage.setItem('cgpt-session', JSON.stringify(session));
+            } catch (e) {}
+            return res.clientToken;
+          }
+          return null;
+        });
+    }
+
+    return attempt({}).then(async (res) => {
+      if (res.status !== 401) return res;
+      if (token && !clientToken) {
+        const ct = await registerClient(token).catch(() => null);
+        if (ct) {
+          const retry = await attempt({ 'X-Client-Token': ct });
+          if (retry.status !== 401) return retry;
         }
       }
-      return res;
+      if (session && session.clientToken) {
+        session = null;
+        try {
+          localStorage.removeItem('cgpt-session');
+        } catch (e) {}
+      }
+      if (window.__cgLoginAsked) return res;
+      window.__cgLoginAsked = true;
+      const ok = await openLogin();
+      window.__cgLoginAsked = false;
+      if (!ok) return res;
+      const retry = await attempt({ 'X-Client-Token': session.clientToken });
+      return retry;
     });
+  }
+
+  $('#login-submit').addEventListener('click', () => submitLogin());
+  $('#login-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitLogin();
+  });
+  $('#login-signup-toggle').addEventListener('click', () => {
+    loginMode = loginMode === 'signup' ? 'login' : 'signup';
+    $('#login-title').textContent = loginMode === 'signup' ? 'Create an account' : 'Log in';
+    $('#login-submit').textContent = loginMode === 'signup' ? 'Create account' : 'Log in';
+  });
+  $('#login-token-toggle').addEventListener('click', () => {
+    closeLogin(true);
+    needMasterPrompt();
+  });
+  function needMasterPrompt() {
+    const master = needMaster();
+    if (master) location.reload();
   }
 
   function copyText(text) {
@@ -232,7 +367,6 @@
       chip.hidden = true;
       fn.textContent = '';
       autoLatest = true;
-      showPreview(null, '');
       return;
     }
     activeArtifactId = art.id;
@@ -240,33 +374,6 @@
     $('#code-kind').textContent = art.kind === 'code' ? (art.lang || 'code').toUpperCase() : 'MARKDOWN';
     chip.hidden = false;
     fn.textContent = art.title;
-    renderPreview(art.kind, art.lang, art.content);
-  }
-
-  function renderPreview(kind, lang, content) {
-    if (kind === 'code' && previewableLang(lang)) {
-      const html = buildPreviewHtml(lang, content);
-      showPreview('iframe', html);
-    } else if (kind === 'doc') {
-      const md = renderMarkdown(content);
-      showPreview('doc', md);
-    } else {
-      showPreview(null, '');
-    }
-  }
-
-  function showPreview(mode, payload) {
-    const frame = $('#code-frame');
-    const doc = $('#code-doc');
-    const empty = $('#code-preview-empty');
-    frame.hidden = mode !== 'iframe';
-    doc.hidden = mode !== 'doc';
-    empty.hidden = mode !== null;
-    if (mode === 'iframe') {
-      frame.srcdoc = payload;
-    } else if (mode === 'doc') {
-      doc.replaceChildren(payload);
-    }
   }
 
   function switchTab(which) {
@@ -284,17 +391,14 @@
     if (which === 'code') $('#code-editor').focus();
   }
 
-  function openBlockInCodeTab(lang, code) {
-    autoLatest = false;
-    const match = artifacts.find((a) => a.kind === 'code' && a.lang === lang && a.content === code);
-    let art = match;
-    if (!art) {
-      art = addArtifact({ msgIndex: -1, n: 0, kind: 'code', lang, title: (CODE_LANGS[lang] || CODE_DEFAULT).filename, content: code });
-    }
-    activeArtifactId = art.id;
-    rebuildVersions();
-    switchTab('code');
-    loadArtifact(art);
+  function openInNewTab(htmlOrText, htmlMode) {
+    const blob = new Blob([htmlOrText], { type: (htmlMode ? 'text/html' : 'text/plain') + ';charset=utf-8' });
+    window.open(URL.createObjectURL(blob), '_blank');
+  }
+
+  function openInNewTab(htmlOrText, htmlMode) {
+    const blob = new Blob([htmlOrText], { type: (htmlMode ? 'text/html' : 'text/plain') + ';charset=utf-8' });
+    window.open(URL.createObjectURL(blob), '_blank');
   }
 
   const PLAIN_THRESHOLD = 400000;
@@ -334,13 +438,11 @@
       head.appendChild(lang);
       const actions = document.createElement('div');
       actions.className = 'code-actions';
-      if (info.preview) {
-        const pv = document.createElement('button');
-        pv.className = 'code-btn';
-        pv.textContent = 'Preview';
-        pv.addEventListener('click', () => openBlockInCodeTab(langId, rawCode));
-        actions.appendChild(pv);
-      }
+      const run = document.createElement('button');
+      run.className = 'code-btn';
+      run.textContent = 'Run';
+      run.addEventListener('click', () => openInNewTab(buildPreviewHtml(langId, rawCode) || rawCode, !!(CODE_LANGS[langId] || {}).preview));
+      actions.appendChild(run);
       const dl = document.createElement('button');
       dl.className = 'code-btn';
       dl.textContent = 'Download';
@@ -358,7 +460,6 @@
       actions.appendChild(cp);
       head.appendChild(actions);
       wrap.insertBefore(head, pre);
-      if (info.preview) wrap.dataset.previewable = '1';
       wrap._langId = langId;
       wrap._rawCode = rawCode;
     });
@@ -649,6 +750,7 @@
       } else if (ev.type === 'chat') {
         if (ev.id && ev.id !== state.currentChatId) {
           state.currentChatId = ev.id;
+          state.loadedChatId = ev.id;
           refreshChatList();
         }
       } else if (ev.type === 'reset') {
@@ -734,6 +836,7 @@
             if (res.ok) {
               if (state.currentChatId === chat.id) {
                 state.currentChatId = null;
+                state.loadedChatId = null;
                 clearMessages();
                 welcome.hidden = false;
               }
@@ -758,7 +861,7 @@
   }
 
   async function selectChat(chatId) {
-    if (chatId === state.currentChatId) return;
+    if (chatId === state.loadedChatId) return;
     state.currentChatId = chatId;
     clearMessages();
     artifacts.length = 0;
@@ -778,7 +881,9 @@
       } else {
         welcome.hidden = false;
       }
+      state.loadedChatId = chatId;
     } catch (e) {}
+    document.body.classList.remove('sidebar-open');
     rebuildVersions();
     refreshChatList();
   }
@@ -906,13 +1011,10 @@
 
   $('#code-run').addEventListener('click', () => {
     const art = artifacts.find((a) => a.id === activeArtifactId);
+    const lang = art ? art.lang : null;
     const content = $('#code-editor').value;
-    if (art) {
-      art.content = content;
-      renderPreview(art.kind, art.lang, content);
-    } else if (content.trim()) {
-      renderPreview('doc', 'md', content);
-    }
+    const html = lang && previewableLang(lang) ? buildPreviewHtml(lang, content) : null;
+    openInNewTab(html || content, !!html);
     const btn = $('#code-run');
     btn.classList.add('run-flash');
     setTimeout(() => btn.classList.remove('run-flash'), 600);
@@ -943,16 +1045,8 @@
     const art = artifacts.find((a) => a.id === activeArtifactId);
     const lang = art ? art.lang : null;
     const content = $('#code-editor').value;
-    if (lang && previewableLang(lang)) {
-      const html = buildPreviewHtml(lang, content);
-      if (html) {
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        window.open(URL.createObjectURL(blob), '_blank');
-        return;
-      }
-    }
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    window.open(URL.createObjectURL(blob), '_blank');
+    const html = lang && previewableLang(lang) ? buildPreviewHtml(lang, content) : null;
+    openInNewTab(html || content, !!html);
   });
 
   $('#code-editor').addEventListener('keydown', (e) => {
@@ -992,15 +1086,25 @@
     try {
       const s = await api('/api/status').then((r) => r.json());
       if (!s.ready) {
-        if (s.captcha) setStatus('err', 'Captcha blocked — run with HEADED=1 and solve once');
-        else if (s.error) setStatus('warn', 'Browser not ready yet…');
-        else setStatus('warn', 'Starting browser…');
+        if (s.captcha) {
+          setStatus('err', 'Captcha blocked — run with HEADED=1 and solve once');
+          boot(30, 'Captcha — check the browser window…');
+        } else if (s.error) {
+          setStatus('warn', 'Browser not ready yet…');
+          boot(45, 'Starting browser…');
+        } else {
+          setStatus('warn', 'Starting browser…');
+          boot(45, 'Starting browser…');
+        }
       } else if (s.gated) {
         setStatus('err', s.retryAfter ? 'Rate limited until ' + new Date(s.retryAfter).toLocaleTimeString() : 'Rate limited');
+        boot(70, 'Rate limited — waiting…');
       } else if (s.busy || s.processing) {
         setStatus('ok', 'Generating…');
+        boot(85, 'Connecting…');
       } else {
         setStatus('ok', 'Connected');
+        boot(92, 'Connecting…');
       }
       if (s.lanIps && s.lanIps.length) {
         $('#lan-url').textContent = 'LAN: http://' + s.lanIps[0] + ':' + s.port;
@@ -1008,10 +1112,136 @@
       }
     } catch (e) {
       setStatus('err', 'Server offline');
+      boot(8, 'Waiting for server…');
     }
   }
 
+  function boot(step, label) {
+    const overlay = $('#boot-overlay');
+    if (!overlay || overlay.hidden) return;
+    const pct = Math.max(4, Math.min(100, Math.round(step)));
+    const bar = $('#boot-bar');
+    const light = $('#boot-logo .boot-light');
+    if (bar) bar.style.width = pct + '%';
+    if (light) light.style.clipPath = 'inset(0 ' + (100 - pct) + '% 0 0)';
+    const pctEl = $('#boot-pct');
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (label) $('#boot-status').textContent = label;
+    if (pct >= 100) {
+      overlay.classList.add('done');
+      setTimeout(() => {
+        overlay.hidden = true;
+      }, 800);
+    }
+  }
+
+  async function checkUpdate() {
+    try {
+      const r = await api('/api/update-info');
+      if (!r.ok) return;
+      const info = await r.json();
+      if (info.latest && info.latest !== info.current) {
+        lastKnownLatest = info.latest;
+        let dismissed = null;
+        try {
+          dismissed = localStorage.getItem('cgpt-update-dismiss');
+        } catch (e) {}
+        if (dismissed !== info.latest) {
+          $('#update-banner').hidden = false;
+          $('#update-banner-text').textContent = 'Update available: v' + info.current + ' → v' + info.latest;
+        }
+      }
+    } catch (e) {}
+  }
+
+  let lastKnownLatest = null;
+
+  $('#update-dismiss').addEventListener('click', () => {
+    $('#update-banner').hidden = true;
+    if (lastKnownLatest) {
+      try {
+        localStorage.setItem('cgpt-update-dismiss', lastKnownLatest);
+      } catch (e) {}
+    }
+  });
+
+  $('#update-btn').addEventListener('click', async () => {
+    const btn = $('#update-btn');
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+    try {
+      const r = await api('/api/update', { method: 'POST' }).then((res) => res.json());
+      if (r.ok) {
+        $('#update-banner-text').textContent = 'Updated — restarting the server…';
+        btn.textContent = 'Restart';
+        setTimeout(() => api('/api/restart', { method: 'POST' }).catch(() => {}), 3500);
+      } else {
+        $('#update-banner-text').textContent = 'Update failed: ' + (r.error || 'unknown error');
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
+    } catch (e) {
+      $('#update-banner-text').textContent = 'Update failed.';
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  });
+
+  $('#menu-btn').addEventListener('click', () => {
+    document.body.classList.toggle('sidebar-open');
+  });
+  document.addEventListener('click', (e) => {
+    if (
+      document.body.classList.contains('sidebar-open') &&
+      !e.target.closest('.sidebar') &&
+      !e.target.closest('#menu-btn')
+    ) {
+      document.body.classList.remove('sidebar-open');
+    }
+  });
+
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRec) {
+    const mic = $('#mic');
+    mic.hidden = false;
+    let rec = null;
+    let listening = false;
+    mic.addEventListener('click', () => {
+      if (listening) {
+        try {
+          rec.stop();
+        } catch (e) {}
+        return;
+      }
+      rec = new SpeechRec();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e) => {
+        let text = '';
+        for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+        input.value = text;
+        autoGrow();
+        updateControls();
+      };
+      const stopListening = () => {
+        listening = false;
+        mic.classList.remove('listening');
+      };
+      rec.onend = stopListening;
+      rec.onerror = stopListening;
+      listening = true;
+      mic.classList.add('listening');
+      try {
+        rec.start();
+      } catch (e) {
+        stopListening();
+      }
+    });
+  }
+
   async function init() {
+    boot(4, 'Starting…');
     try {
       const t = localStorage.getItem('cgpt-theme');
       if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
@@ -1020,9 +1250,12 @@
     if (s && s.activeChatId) {
       await selectChat(s.activeChatId);
     }
+    boot(100, 'Ready');
     input.focus();
     pollStatus();
     setInterval(pollStatus, 5000);
+    checkUpdate();
+    setInterval(checkUpdate, 1800000);
   }
 
   init();

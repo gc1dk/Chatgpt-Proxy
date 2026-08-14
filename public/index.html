@@ -10,6 +10,16 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="boot-overlay" id="boot-overlay">
+  <div class="boot-logo" id="boot-logo">
+    <svg class="boot-dim" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#boot-petal" transform="rotate(60 1203 1203)"/><use href="#boot-petal" transform="rotate(120 1203 1203)"/><use href="#boot-petal" transform="rotate(180 1203 1203)"/><use href="#boot-petal" transform="rotate(240 1203 1203)"/><use href="#boot-petal" transform="rotate(300 1203 1203)"/></svg>
+    <svg class="boot-light" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#boot-petal" transform="rotate(60 1203 1203)"/><use href="#boot-petal" transform="rotate(120 1203 1203)"/><use href="#boot-petal" transform="rotate(180 1203 1203)"/><use href="#boot-petal" transform="rotate(240 1203 1203)"/><use href="#boot-petal" transform="rotate(300 1203 1203)"/></svg>
+  </div>
+  <div class="boot-track"><div class="boot-bar" id="boot-bar"></div></div>
+  <div class="boot-pct" id="boot-pct">0%</div>
+  <div class="boot-status" id="boot-status">Starting…</div>
+</div>
+<svg width="0" height="0" style="position:absolute"><path id="boot-petal" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z"/></svg>
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-header">
@@ -32,6 +42,9 @@
 
   <main class="main">
     <header class="topbar">
+      <button id="menu-btn" class="icon-btn sidebar-toggle" title="Menu" aria-label="Menu">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2.5 5.5a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H3.25a.75.75 0 0 1-.75-.75Zm0 4.5a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H3.25a.75.75 0 0 1-.75-.75Zm0 4.5a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H3.25a.75.75 0 0 1-.75-.75Z"/></svg>
+      </button>
       <div class="topbar-title">
       <svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom-a" transform="rotate(60 1203 1203)"/><use href="#blossom-a" transform="rotate(120 1203 1203)"/><use href="#blossom-a" transform="rotate(180 1203 1203)"/><use href="#blossom-a" transform="rotate(240 1203 1203)"/><use href="#blossom-a" transform="rotate(300 1203 1203)"/></svg>
         <span>ChatGPT</span>
@@ -47,6 +60,12 @@
         </button>
       </div>
     </header>
+
+    <div class="update-banner" id="update-banner" hidden>
+      <span id="update-banner-text">Update available</span>
+      <button id="update-btn" class="msg-action">Update</button>
+      <button id="update-dismiss" class="msg-action">Dismiss</button>
+    </div>
 
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="chat" id="tab-chat">Chat</button>
@@ -69,6 +88,9 @@
           </div>
           <form class="composer" id="composer">
             <textarea id="input" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+            <button type="button" class="send-btn mic-btn" id="mic" aria-label="Voice input" title="Voice input" hidden>
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3ZM4.75 9.75a.75.75 0 0 1 1.5 0 3.75 3.75 0 0 0 7.5 0 .75.75 0 0 1 1.5 0 5.25 5.25 0 0 1-4.5 5.21v1.79h2.25a.75.75 0 0 1 0 1.5H7a.75.75 0 0 1 0-1.5h2.25v-1.79a5.25 5.25 0 0 1-4.5-5.21Z"/></svg>
+            </button>
             <button type="submit" class="send-btn" id="send" aria-label="Send message" disabled>
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.17607 4.2585C9.63094 3.80374 10.3686 3.80387 10.8235 4.2585L15.262 8.696C15.5216 8.95561 15.5214 9.37671 15.262 9.63643C15.0023 9.89613 14.5813 9.89613 14.3216 9.63643L10.6653 5.98018V15.6247C10.6653 15.9919 10.3674 16.2896 10.0003 16.2898C9.63302 16.2898 9.33525 15.992 9.33525 15.6247V5.9792L5.679 9.63643C5.4193 9.89613 4.99729 9.89613 4.73759 9.63643C4.47857 9.37674 4.47827 8.9555 4.73759 8.696L9.17607 4.2585Z"/></svg>
             </button>
@@ -86,7 +108,7 @@
           </div>
           <div class="code-toolbar-actions">
             <span class="auto-badge" id="auto-badge" hidden title="Auto-syncs to the latest code from the chat"><span class="auto-dot"></span>Auto</span>
-            <button id="code-run" class="code-btn" title="Re-run / refresh preview">
+            <button id="code-run" class="code-btn" title="Run in a new tab">
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2a1 1 0 0 1 1.52-.85l9 5.3a1 1 0 0 1 0 1.7l-9 5.3a1 1 0 0 1-1.52-.85V4.2Z"/></svg>
               <span>Run</span>
             </button>
@@ -106,21 +128,32 @@
         </div>
         <div class="code-workspace">
           <div class="code-editor-wrap">
-            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code or document from the chat shows up here automatically. Edit it and press Run to preview. Use the Versions menu to jump to an earlier one."></textarea>
-          </div>
-          <div class="code-preview-wrap">
-            <div class="code-preview-empty" id="code-preview-empty">
-              <svg class="blossom" viewBox="0 0 2406 2406" xmlns="http://www.w3.org/2000/svg"><path d="M1 578.4C1 259.5 259.5 1 578.4 1h1249.1c319 0 577.5 258.5 577.5 577.4V2406H578.4C259.5 2406 1 2147.5 1 1828.6V578.4z" fill="#74aa9c"/><path id="blossom2-a" d="M1107.3 299.1c-197.999 0-373.9 127.3-435.2 315.3L650 743.5v427.9c0 21.4 11 40.4 29.4 51.4l344.5 198.515V833.3h.1v-27.9L1372.7 604c33.715-19.52 70.44-32.857 108.47-39.828L1447.6 450.3C1361 353.5 1237.1 298.5 1107.3 299.1zm0 117.5-.6.6c79.699 0 156.3 27.5 217.6 78.4-2.5 1.2-7.4 4.3-11 6.1L952.8 709.3c-18.4 10.4-29.4 30-29.4 51.4V1248l-155.1-89.4V755.8c-.1-187.099 151.601-338.9 339-339.2z" fill="#fff"/><use href="#blossom2-a" transform="rotate(60 1203 1203)"/><use href="#blossom2-a" transform="rotate(120 1203 1203)"/><use href="#blossom2-a" transform="rotate(180 1203 1203)"/><use href="#blossom2-a" transform="rotate(240 1203 1203)"/><use href="#blossom2-a" transform="rotate(300 1203 1203)"/></svg>
-              <p>Preview will appear here</p>
-              <p class="sub">Code from the chat lands here — edit it and hit Run</p>
-            </div>
-            <iframe id="code-frame" class="code-frame" sandbox="allow-scripts allow-forms allow-modals allow-popups" title="Live preview" hidden></iframe>
-            <div id="code-doc" class="code-doc markdown" hidden></div>
+            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code or document from the chat shows up here automatically. Use Run or Open to view it in a new tab. Use the Versions menu to jump to an earlier one."></textarea>
           </div>
         </div>
       </section>
     </div>
   </main>
+</div>
+
+<div class="modal-backdrop" id="login-modal" hidden>
+  <div class="modal login-modal">
+    <div class="modal-header">
+      <span class="modal-title" id="login-title">Log in</span>
+    </div>
+    <div class="modal-body">
+      <label class="login-label" for="login-username">Username</label>
+      <input id="login-username" class="login-input" autocomplete="username" spellcheck="false">
+      <label class="login-label" for="login-password">Password</label>
+      <input id="login-password" class="login-input" type="password" autocomplete="current-password">
+      <p class="login-error" id="login-error"></p>
+      <div class="login-actions">
+        <button id="login-submit" class="msg-action">Log in</button>
+        <button id="login-signup-toggle" class="msg-action ghost">Create an account</button>
+        <button id="login-token-toggle" class="msg-action ghost">Use a token instead</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="modal-backdrop" id="settings-modal" hidden>
