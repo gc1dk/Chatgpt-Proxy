@@ -115,6 +115,8 @@ before(async () => {
       PORT: String(serverPort),
       NO_BROWSER: '1',
       TIMEOUT: '20000',
+      MAX_PROMPT: '10000',
+      TTS_MAX_CHARS: '100',
       PROFILE: path.join(tmpDir, 'profile'),
       CHATS_FILE: path.join(tmpDir, 'chats.json'),
       SETTINGS_FILE: path.join(tmpDir, 'settings.json'),
@@ -315,4 +317,81 @@ test('login/signup are disabled when AUTH_TOKEN is not set', async () => {
   assert.equal(login.status, 400);
   const signup = await jsonReq('POST', `${base}/api/signup`, { username: 'x', password: 'y' });
   assert.equal(signup.status, 400);
+});
+
+test('POST /api/chat rejects messages above MAX_PROMPT (guest-mode cap)', async () => {
+  const big = 'y'.repeat(10001);
+  const r = await jsonReq('POST', `${base}/api/chat`, { message: big });
+  assert.equal(r.status, 413);
+});
+
+test('POST /v1/chat/completions rejects messages above MAX_PROMPT', async () => {
+  const big = 'y'.repeat(10001);
+  const r = await jsonReq('POST', `${base}/v1/chat/completions`, { messages: [{ role: 'user', content: big }] });
+  assert.equal(r.status, 400);
+});
+
+test('GET /api/tts validates input (empty text rejected)', async () => {
+  const r = await jsonReq('GET', `${base}/api/tts?text=`);
+  assert.equal(r.status, 400);
+  const tooLong = await jsonReq('GET', `${base}/api/tts?text=${'a'.repeat(101)}`);
+  assert.equal(tooLong.status, 413);
+});
+
+// Opens an SSE request; returns a live events array + a done promise (resolves when the stream ends).
+function openSse(method, url, body, headers = {}) {
+  const u = new URL(url);
+  const data = body === undefined ? null : JSON.stringify(body);
+  const events = [];
+  let resolveDone;
+  const done = new Promise((r) => { resolveDone = r; });
+  const req = http.request(
+    {
+      host: u.hostname,
+      port: u.port,
+      path: u.pathname + u.search,
+      method,
+      headers: { 'Content-Type': 'application/json', ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}), ...headers },
+    },
+    (res) => {
+      let buf = '';
+      res.on('data', (c) => {
+        buf += c;
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          for (const line of block.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              events.push(JSON.parse(line.slice(6)));
+            } catch {}
+          }
+        }
+      });
+      res.on('end', resolveDone);
+    }
+  );
+  req.on('error', resolveDone);
+  if (data) req.write(data);
+  req.end();
+  return { events, done };
+}
+
+test('POST /api/stop cancels the caller-owned queued job with a cancelled event', async () => {
+  const a = openSse('POST', `${base}/api/chat`, { message: 'first long reply please' }, { 'X-Client-Id': 'clientA' });
+  await new Promise((r) => setTimeout(r, 300));
+  const b = openSse('POST', `${base}/api/chat`, { message: 'second long reply please' }, { 'X-Client-Id': 'clientB' });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(
+    !b.events.some((e) => e.type === 'delta' || e.type === 'done'),
+    'second should be queued, events: ' + JSON.stringify(b.events)
+  );
+  const stop = await jsonReq('POST', `${base}/api/stop`, {}, { 'X-Client-Id': 'clientB' });
+  assert.equal(stop.status, 200);
+  await Promise.all([a.done, b.done]);
+  const cancelled = b.events.find((e) => e.type === 'error' && e.code === 'cancelled');
+  assert.ok(cancelled, 'queued job should be cancelled: ' + JSON.stringify(b.events));
+  const done = a.events.find((e) => e.type === 'done');
+  assert.ok(done, 'first job should still complete: ' + JSON.stringify(a.events.slice(-3)));
 });

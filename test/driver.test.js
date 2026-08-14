@@ -83,17 +83,17 @@ test('getHistory(): captures user + assistant messages', async () => {
 
 test('submit(): throws cleanly for oversized messages', async () => {
   await makeDriver();
-  const big = 'x'.repeat(5000001);
+  const big = 'x'.repeat(500001);
   await assert.rejects(
     () => driver.submit({ chatId: 'c4', message: big }),
     /too large/
   );
 });
 
-test('submit(): handles a large story (~1 MB)', async () => {
+test('submit(): handles a large story (~450 KB, near the guest-mode cap)', async () => {
   await makeDriver();
   const story =
-    'Once upon a time, there was a very long story. '.repeat(20000); // ~1 MB
+    'Once upon a time, there was a very long story. '.repeat(9000); // ~450 KB
   const result = await driver.submit({ chatId: 'c4b', message: story });
   assert.equal(result.error, null, 'large story should get a reply, got: ' + JSON.stringify(result));
   const history = await driver.getHistory('c4b');

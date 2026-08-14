@@ -10,7 +10,7 @@ const MOBILE_UA =
 const RESET_MARKER = '__CG_RESET__';
 const ASSISTANT_INNER = '[data-stream-target], [data-assistant-markdown], [data-message-copy]';
 const CHALLENGE_TITLE = 'Just a moment...';
-const MAX_COMPOSER_MSG = 5000000;
+const MAX_COMPOSER_MSG = parseInt(process.env.MAX_PROMPT || '500000', 10);
 
 // Multi-selector fallbacks so a single class/attribute rename by OpenAI can't break the driver.
 const SEL = {

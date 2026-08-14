@@ -21,6 +21,11 @@ const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, 'users.json');
 const AUTH_TOKEN = process.env.AUTH_TOKEN || null;
 const ENCRYPT_KEY = process.env.ENCRYPT_KEY || null;
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== '0';
+const MAX_PROMPT = parseInt(process.env.MAX_PROMPT || '500000', 10);
+const HTTPS = process.env.HTTPS === '1';
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || String(PORT + 1), 10);
+const TTS_MAX_CHARS = parseInt(process.env.TTS_MAX_CHARS || '20000', 10);
+const TTS_CHUNK = 1800;
 
 const driver = new ChatGPTDriver({ headed: HEADED, profileDir: PROFILE, timeoutMs: TIMEOUT, stateFile: STATE_FILE });
 
@@ -206,6 +211,8 @@ const queue = [];
 let processing = false;
 let currentJobId = null;
 let currentJobClient = null;
+let resolveAborted = null;
+let currentJob = null;
 
 let store = { chats: [], activeChatId: null };
 try {
@@ -323,6 +330,7 @@ async function pump() {
       const job = queue.shift();
       currentJobId = job.id;
       currentJobClient = job.clientId || null;
+      currentJob = job;
       if (job.aborted) {
         try { job.res.end(); } catch {}
         currentJobId = null;
@@ -349,7 +357,7 @@ async function pump() {
         try { job.res.end(); } catch {}
         if (resolveAborted) resolveAborted();
       }, JOB_WATCHDOG_MS);
-      let resolveAborted;
+      resolveAborted = null;
       const abortedPromise = new Promise((r) => { resolveAborted = r; });
       try {
         await driver.start();
@@ -428,7 +436,16 @@ async function pump() {
             c.messages.push({ role: 'assistant', text: finalText });
             saveStore();
           }
-          if (job.aborted) continue;
+          if (job.aborted) {
+            try {
+              if (job.openai) {
+                sseOpenAI(job.res, '[DONE]');
+              } else {
+                sse(job.res, { type: 'error', code: 'cancelled', message: 'Generation stopped.' });
+              }
+            } catch {}
+            continue;
+          }
           if (result && result.error) {
             if (job.openai) {
               sseOpenAI(job.res, oaiChunk(job.id, ''));
@@ -455,6 +472,8 @@ async function pump() {
       } finally {
         clearTimeout(watchdog);
         try { job.res.end(); } catch {}
+        resolveAborted = null;
+        currentJob = null;
         if (currentJobId === job.id) currentJobId = null;
         if (currentJobClient === job.clientId) currentJobClient = null;
         const chat = getChat(job.chatId);
@@ -519,6 +538,10 @@ app.post('/api/chat', (req, res) => {
     res.status(400).json({ error: 'message is required' });
     return;
   }
+  if (message.length > MAX_PROMPT) {
+    res.status(413).json({ error: `message too long: max ${MAX_PROMPT.toLocaleString()} characters (ChatGPT's guest-mode context limit)` });
+    return;
+  }
   const clientId = clientIdOf(req);
   if (AUTH_TOKEN) {
     const depth =
@@ -563,17 +586,28 @@ app.post('/api/new-chat', async (req, res) => {
 
 app.post('/api/stop', async (req, res) => {
   const clientId = clientIdOf(req);
-  const target = queue.find((j) => !j.aborted) || { clientId: currentJobClient };
-  if (AUTH_TOKEN && target && target.clientId !== clientId && !req.masterAuth) {
-    res.status(403).json({ error: 'you can only stop your own request' });
+  const isMaster = AUTH_TOKEN && req.masterAuth;
+  const ownedCurrent = currentJob && currentJob.clientId === clientId;
+  if (currentJob && (ownedCurrent || isMaster)) {
+    currentJob.aborted = true;
+    try {
+      await driver.stop();
+      if (resolveAborted) resolveAborted();
+    } catch {}
+    res.json({ ok: true });
     return;
   }
-  try {
-    await driver.stop();
+  const ownedQueued = queue.find((j) => !j.aborted && (isMaster || j.clientId === clientId));
+  if (ownedQueued) {
+    ownedQueued.aborted = true;
+    try {
+      sse(ownedQueued.res, { type: 'error', code: 'cancelled', message: 'Generation stopped.' });
+    } catch {}
+    try { ownedQueued.res.end(); } catch {}
     res.json({ ok: true });
-  } catch {
-    res.json({ ok: false });
+    return;
   }
+  res.json({ ok: false, error: 'nothing to stop' });
 });
 
 app.post('/api/chat-delete', async (req, res) => {
@@ -709,6 +743,9 @@ app.get('/api/status', async (req, res) => {
     ...st,
     lanIps: lanIps(),
     port: PORT,
+    https: HTTPS,
+    httpsPort: HTTPS_PORT,
+    maxPrompt: MAX_PROMPT,
     activeChatId: store.activeChatId,
     chatCount: store.chats.length,
   });
@@ -723,6 +760,64 @@ function lanIps() {
   }
   return out;
 }
+
+// ---- voice: text-to-speech via Microsoft Edge neural voices (free, no keys) ----
+function splitForTTS(text, max) {
+  const out = [];
+  let cur = '';
+  const re = /[^.!?\n]*[.!?\n]+|[^.!?\n]+$/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (cur && cur.length + m[0].length > max) {
+      out.push(cur.trim());
+      cur = '';
+    }
+    cur += m[0];
+  }
+  if (cur.trim()) out.push(cur.trim());
+  if (!out.length && text.trim()) out.push(text.trim());
+  return out;
+}
+
+app.get('/api/tts', async (req, res) => {
+  const text = String(req.query.text || '').trim();
+  if (!text) {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+  if (text.length > TTS_MAX_CHARS) {
+    res.status(413).json({ error: `text too long for speech (max ${TTS_MAX_CHARS.toLocaleString()} characters)` });
+    return;
+  }
+  const voice = String(req.query.voice || 'en-US-AriaNeural').slice(0, 64);
+  let EdgeTTS;
+  try {
+    ({ EdgeTTS } = require('node-edge-tts'));
+  } catch (e) {
+    res.status(500).json({ error: 'TTS engine unavailable: ' + String((e && e.message) || e) });
+    return;
+  }
+  const lang = voice.split('-').slice(0, 2).join('-');
+  const tts = new EdgeTTS({ voice, lang, outputFormat: 'audio-24khz-48kbitrate-mono-mp3', timeout: 20000 });
+  const chunks = splitForTTS(text, TTS_CHUNK);
+  const tmpDir = path.join(os.tmpdir(), 'cg-tts-' + process.pid);
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+    for (let i = 0; i < chunks.length; i++) {
+      const file = path.join(tmpDir, `chunk-${i}.mp3`);
+      await tts.ttsPromise(chunks[i], file);
+      res.write(fs.readFileSync(file));
+      try { fs.unlinkSync(file); } catch {}
+    }
+    res.end();
+  } catch (e) {
+    console.error('[tts]', String((e && e.message) || e));
+    try { res.end(); } catch {}
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+});
 
 // ---- update check ----
 let updateInfo = { current: APP_VERSION, latest: null, changelog: '', checkedAt: 0, error: null };
@@ -753,7 +848,8 @@ checkForUpdates();
 const updateTimer = setInterval(checkForUpdates, 3600000);
 updateTimer.unref && updateTimer.unref();
 
-app.get('/api/update-info', (req, res) => {
+app.get('/api/update-info', async (req, res) => {
+  if (String(req.query.refresh || '') === '1') await checkForUpdates();
   res.json(updateInfo);
 });
 
@@ -811,8 +907,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     res.status(400).json({ error: { message: 'a user message is required', type: 'invalid_request_error' } });
     return;
   }
-  if (prompt.length > 5000000) {
-    res.status(400).json({ error: { message: 'message too large (max 5 MB)', type: 'invalid_request_error' } });
+  if (prompt.length > MAX_PROMPT) {
+    res.status(400).json({ error: { message: `message too long (max ${MAX_PROMPT.toLocaleString()} characters)`, type: 'invalid_request_error' } });
     return;
   }
   const stream = !!body.stream;
@@ -933,16 +1029,76 @@ function openBrowser(url) {
   }, 1500);
 }
 
-app.listen(PORT, HOST, () => {
-  const ips = lanIps();
-  console.log(`ChatGPT Gateway v${APP_VERSION} listening on http://localhost:${PORT}`);
-  if (HOST !== '0.0.0.0') {
-    console.log(`Bound to ${HOST} only (LAN access disabled)`);
-  } else {
-    console.log(`LAN: ${ips.map((ip) => `http://${ip}:${PORT}`).join('  ')}`);
+async function start() {
+  if (HTTPS) {
+    const certFile = path.join(PROFILE, 'selfsigned.crt');
+    const keyFile = path.join(PROFILE, 'selfsigned.key');
+    try {
+      fs.mkdirSync(PROFILE, { recursive: true });
+      if (!fs.existsSync(certFile) || !fs.existsSync(keyFile)) {
+        const selfsigned = require('selfsigned');
+        const altNames = [
+          { type: 2, value: 'localhost' },
+          { type: 7, ip: '127.0.0.1' },
+          ...lanIps().map((ip) => ({ type: 7, ip })),
+        ];
+        const pems = await selfsigned.generate([{ name: 'commonName', value: 'localhost' }], {
+          keySize: 2048,
+          days: 3650,
+          algorithm: 'sha256',
+          extensions: [
+            { name: 'basicConstraints', cA: false },
+            { name: 'keyUsage', digitalSignature: true, keyEncipherment: true },
+            { name: 'extKeyUsage', serverAuth: true },
+            { name: 'subjectAltName', altNames },
+          ],
+        });
+        fs.writeFileSync(certFile, pems.cert);
+        fs.writeFileSync(keyFile, pems.private);
+        console.log('[https] generated a self-signed certificate in', PROFILE);
+      }
+      const https = require('https');
+      const server = https.createServer({ key: fs.readFileSync(keyFile), cert: fs.readFileSync(certFile) }, app);
+      server.listen(HTTPS_PORT, HOST, () => {
+        console.log(`HTTPS (voice) listening on https://localhost:${HTTPS_PORT}`);
+        if (HOST === '0.0.0.0') {
+          console.log(`LAN: ${lanIps().map((ip) => `https://${ip}:${HTTPS_PORT}`).join('  ')}`);
+        }
+        console.log('[https] first visit: Advanced → Continue. On Windows the server auto-installs the cert into your user store.');
+        if (process.platform === 'win32') {
+          try {
+            const out = execSync(`certutil -user -addstore Root "${certFile}"`, { timeout: 20000, stdio: 'pipe' });
+            console.log('[https] certificate trusted in the Windows user store (certutil).');
+          } catch (e) {
+            const out = String((e && e.stdout) || '');
+            if (/already|exists/i.test(out)) {
+              console.log('[https] certificate already trusted.');
+            } else {
+              console.log('[https] could not auto-trust the certificate. Fix (run once, no admin needed):');
+              console.log(`  certutil -user -addstore Root "${certFile}"`);
+            }
+          }
+        }
+      });
+    } catch (e) {
+      console.error('[https] failed to start HTTPS listener:', String((e && e.message) || e));
+    }
   }
-  if (AUTH_TOKEN) console.log('AUTH_TOKEN set: all /api endpoints require the master token or a per-client token (/api/register)');
-  if (ENCRYPT_KEY) console.log('ENCRYPT_KEY set: chats.json / settings.json are encrypted at rest');
-  if (HEADED) console.log('HEADED mode: a visible browser window will open (solve any captcha once, cookies persist in ./profile)');
-  openBrowser(`http://${(ips[0] || 'localhost')}:${PORT}`);
-});
+  app.listen(PORT, HOST, () => {
+    const ips = lanIps();
+    console.log(`ChatGPT Gateway v${APP_VERSION} listening on http://localhost:${PORT}`);
+    if (HOST !== '0.0.0.0') {
+      console.log(`Bound to ${HOST} only (LAN access disabled)`);
+    } else {
+      console.log(`LAN: ${ips.map((ip) => `http://${ip}:${PORT}`).join('  ')}`);
+    }
+    if (AUTH_TOKEN) console.log('AUTH_TOKEN set: all /api endpoints require the master token or a per-client token (/api/register)');
+    if (ENCRYPT_KEY) console.log('ENCRYPT_KEY set: chats.json / settings.json are encrypted at rest');
+    if (HTTPS) console.log(`HTTPS set: voice (mic) works on https://localhost:${HTTPS_PORT} (and the LAN https URLs)`);
+    console.log(`Max prompt: ${MAX_PROMPT.toLocaleString()} characters`);
+    if (HEADED) console.log('HEADED mode: a visible browser window will open (solve any captcha once, cookies persist in ./profile)');
+    openBrowser(`http://${(ips[0] || 'localhost')}:${PORT}`);
+  });
+}
+
+start();

@@ -16,6 +16,7 @@
   const STOP_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.0834 3.91797C14.7392 3.91797 16.0812 5.26023 16.0814 6.91602V13.083C16.0814 14.7389 14.7393 16.0811 13.0834 16.0811H6.91638C5.2606 16.0809 3.91833 14.7388 3.91833 13.083V6.91602C3.91851 5.26034 5.26071 3.91814 6.91638 3.91797H13.0834Z"/></svg>';
   const RETRY_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M15.3124 4.93317C14.9966 4.6002 14.4677 4.58616 14.1347 4.90195L13.1228 5.85386C11.6567 4.45304 9.59095 3.90002 7.62612 4.45499C4.79601 5.24742 3.01804 8.15454 3.81047 10.9846C4.6029 13.8148 7.51003 15.5927 10.3401 14.8003C12.4387 14.2097 13.8927 12.4036 14.1268 10.3756C14.171 10.0132 14.4821 9.74396 14.8445 9.78816C15.2069 9.83236 15.4761 10.1435 15.4319 10.5059C15.1392 12.9968 13.3474 15.2161 10.7168 15.9591C7.12435 16.9657 3.42812 14.7472 2.42148 11.1548C1.41485 7.56235 3.63332 3.86611 7.22579 2.85948C9.66003 2.16786 12.1808 2.79148 13.9662 4.48231L14.9966 3.51339C15.3296 3.1976 15.8585 3.21164 16.1743 3.54461C16.4901 3.87758 16.4761 4.40648 16.1431 4.72227L15.3124 4.93317ZM10 5.25a.75.75 0 0 1 .75.75v4.25l2.5 1.5a.75.75 0 1 1-.75 1.3l-2.94-1.76a.75.75 0 0 1-.31-.61V6a.75.75 0 0 1 .75-.75Z"/></svg>';
   const DOWNLOAD_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a.75.75 0 0 1 .75.75v8.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V2.5A.75.75 0 0 1 10 1.75ZM3.25 16a.75.75 0 0 1 .75-.75h12a.75.75 0 0 1 0 1.5H4a.75.75 0 0 1-.75-.75Z"/></svg>';
+  const SPEAK_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10.9216 2.81809C11.1455 3.00054 11.1797 3.31516 10.9973 3.53906L5.93316 9.75H3.5C3.22386 9.75 3 9.97386 3 10.25V12.75C3 13.0261 3.22386 13.25 3.5 13.25H5.93316L10.9973 19.4609C11.1797 19.6848 11.1455 19.9995 10.9216 20.1819C10.6977 20.3644 10.3831 20.3302 10.2006 20.1063L5.03567 13.75H3.5C2.67157 13.75 2 13.0784 2 12.25V10.75C2 9.92157 2.67157 9.25 3.5 9.25H5.03567L10.2006 2.8937C10.3831 2.6698 10.6977 2.63562 10.9216 2.81809ZM12.4697 5.53033C12.7626 5.23744 13.2374 5.23744 13.5303 5.53033C15.4908 7.49077 15.4908 10.5092 13.5303 12.4697C13.2374 12.7626 12.7626 12.7626 12.4697 12.4697C12.1768 12.1768 12.1768 11.7019 12.4697 11.409C13.8435 10.0352 13.8435 7.96478 12.4697 6.59099C12.1768 6.2981 12.1768 5.82323 12.4697 5.53033ZM15.25 3.75C15.5429 3.45711 16.0178 3.45711 16.3107 3.75C19.2298 6.66909 19.2298 11.3309 16.3107 14.25C16.0178 14.5429 15.5429 14.5429 15.25 14.25C14.9571 13.9571 14.9571 13.4822 15.25 13.1893C17.5833 10.856 17.5833 7.14399 15.25 4.81066C14.9571 4.51777 14.9571 4.04289 15.25 3.75Z"/></svg>';
 
   const RENAME_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.4265 3.10381C14.3857 2.15908 15.9276 2.16466 16.8796 3.11651C17.8339 4.07106 17.8372 5.61827 16.8865 6.57647L11.7244 11.7786C11.3005 12.2058 10.7622 12.5027 10.1746 12.6321L7.78784 13.1565C7.20661 13.2842 6.6889 12.766 6.81714 12.1849L7.34253 9.80498C7.47294 9.21426 7.77197 8.67391 8.20288 8.24932L13.4265 3.10381ZM15.9392 4.05694C15.5038 3.62172 14.7988 3.61907 14.3601 4.05108L9.13647 9.19659C8.88861 9.44077 8.71644 9.75138 8.64136 10.0911L8.28979 11.6849L9.88843 11.3333C10.2265 11.2588 10.5362 11.0878 10.78 10.8421L15.9421 5.63897C16.3769 5.20075 16.3756 4.49352 15.9392 4.05694Z"/></svg>';
   const TRASH_SVG = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M8.5 2.75a.75.75 0 0 0-.75.75v.5H4.5a.75.75 0 0 0 0 1.5h.44l.75 9.36a2.25 2.25 0 0 0 2.24 2.14h4.14a2.25 2.25 0 0 0 2.24-2.14l.75-9.36h.44a.75.75 0 0 0 0-1.5h-3.25v-.5a.75.75 0 0 0-.75-.75h-3Zm3 .5v.5h-3v-.5h3Zm-4.34 3.4h5.68l-.7 8.72a.75.75 0 0 1-.75.71H8.61a.75.75 0 0 1-.75-.71l-.7-8.72Z"/></svg>';
@@ -26,6 +27,51 @@
     currentChatId: null,
     loadedChatId: null,
   };
+
+  // ---- voice: spoken replies (server TTS) ----
+  let voiceEnabled = false;
+  let voiceName = 'en-US-AriaNeural';
+  let audioEl = null;
+  let serverMaxPrompt = null;
+  try {
+    voiceEnabled = localStorage.getItem('cgpt-speak') === '1';
+    const v = localStorage.getItem('cgpt-voice');
+    if (v) voiceName = v;
+  } catch (e) {}
+  function stopSpeech() {
+    if (audioEl) {
+      try {
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+      } catch (e) {}
+    }
+    document.querySelectorAll('.speaking').forEach((b) => b.classList.remove('speaking'));
+  }
+  async function speak(text, btn) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    stopSpeech();
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      document.body.appendChild(audioEl);
+    }
+    if (btn) btn.classList.add('speaking');
+    try {
+      const res = await api('/api/tts?text=' + encodeURIComponent(t.slice(0, 20000)) + '&voice=' + encodeURIComponent(voiceName));
+      if (!res.ok) throw new Error('tts ' + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      audioEl.src = url;
+      audioEl.onended = () => {
+        if (btn) btn.classList.remove('speaking');
+        URL.revokeObjectURL(url);
+      };
+      await audioEl.play();
+    } catch (e) {
+      if (btn) btn.classList.remove('speaking');
+      console.error('tts', e);
+    }
+  }
 
   const CLIENT_ID = (() => {
     try {
@@ -526,6 +572,11 @@
       });
     });
     actions.appendChild(copyBtn);
+    const speakBtn = document.createElement('button');
+    speakBtn.className = 'msg-action';
+    speakBtn.innerHTML = SPEAK_SVG + '<span>Play</span>';
+    speakBtn.addEventListener('click', () => speak(text, speakBtn));
+    actions.appendChild(speakBtn);
     msgEl.appendChild(actions);
   }
 
@@ -612,6 +663,16 @@
         scrollToBottom(true);
       },
       error(ev) {
+        if (ev.code === 'cancelled') {
+          this.ready = true;
+          msg.classList.remove('streaming');
+          if (this.buf.trim()) this.render();
+          const note = document.createElement('div');
+          note.className = 'cancel-note';
+          note.textContent = 'Stopped.';
+          msg.appendChild(note);
+          return;
+        }
         this.ready = true;
         this.failed = true;
         msg.classList.remove('streaming');
@@ -654,9 +715,25 @@
     state.busy = true;
     state.lastPrompt = text;
     updateControls();
+    stopSpeech();
     welcome.hidden = true;
     addUserMessage(text);
     const bubble = makeStreamingBubble();
+    if (serverMaxPrompt && text.length > serverMaxPrompt) {
+      bubble.error({
+        code: 'internal',
+        message:
+          'Message too long: ' +
+          text.length.toLocaleString() +
+          ' characters — ChatGPT caps a single message at ' +
+          serverMaxPrompt.toLocaleString() +
+          '. Split it into smaller messages.',
+      });
+      refreshChatList();
+      state.busy = false;
+      updateControls();
+      return;
+    }
 
     const stopBtn = document.createElement('button');
     stopBtn.className = 'msg-action';
@@ -759,6 +836,7 @@
         queueInfo.textContent = ev.position > 0 ? 'Waiting for your turn in the queue…' : '';
       } else if (ev.type === 'done') {
         bubble.finish(ev.text || '');
+        if (voiceEnabled && (ev.text || bubble.buf)) speak(ev.text || bubble.buf);
       } else if (ev.type === 'error') {
         bubble.error(ev);
       }
@@ -965,7 +1043,24 @@
         $('#settings-system-prompt').value = s.systemPrompt || '';
       })
       .catch(() => {});
+    const speakLabel = $('#settings-speak-label');
+    if (speakLabel) speakLabel.textContent = 'Speak replies: ' + (voiceEnabled ? 'on' : 'off');
+    const voiceSel = $('#settings-voice');
+    if (voiceSel) voiceSel.value = voiceName;
     $('#settings-modal').hidden = false;
+  });
+
+  $('#settings-speak-toggle').addEventListener('click', () => {
+    voiceEnabled = !voiceEnabled;
+    try { localStorage.setItem('cgpt-speak', voiceEnabled ? '1' : '0'); } catch (e) {}
+    const label = $('#settings-speak-label');
+    if (label) label.textContent = 'Speak replies: ' + (voiceEnabled ? 'on' : 'off');
+    if (!voiceEnabled) stopSpeech();
+  });
+
+  $('#settings-voice').addEventListener('change', (e) => {
+    voiceName = e.target.value || 'en-US-AriaNeural';
+    try { localStorage.setItem('cgpt-voice', voiceName); } catch (err) {}
   });
 
   $('#settings-save-prompt').addEventListener('click', async (e) => {
@@ -1107,9 +1202,16 @@
         boot(92, 'Connecting…');
       }
       if (s.lanIps && s.lanIps.length) {
-        $('#lan-url').textContent = 'LAN: http://' + s.lanIps[0] + ':' + s.port;
-        $('#settings-server-info').textContent = 'http://' + s.lanIps[0] + ':' + s.port + ' · ' + s.chatCount + ' chat(s)';
+        if (s.https && s.httpsPort) {
+          $('#lan-url').textContent = 'LAN: https://' + s.lanIps[0] + ':' + s.httpsPort + ' (voice)';
+          $('#settings-server-info').textContent =
+            'https://' + s.lanIps[0] + ':' + s.httpsPort + ' · ' + s.chatCount + ' chat(s)';
+        } else {
+          $('#lan-url').textContent = 'LAN: http://' + s.lanIps[0] + ':' + s.port;
+          $('#settings-server-info').textContent = 'http://' + s.lanIps[0] + ':' + s.port + ' · ' + s.chatCount + ' chat(s)';
+        }
       }
+      if (typeof s.maxPrompt === 'number') serverMaxPrompt = s.maxPrompt;
     } catch (e) {
       setStatus('err', 'Server offline');
       boot(8, 'Waiting for server…');
@@ -1135,10 +1237,51 @@
     }
   }
 
-  async function checkUpdate() {
+  let lastKnownLatest = null;
+  let updateState = 'idle';
+
+  function setBanner(state, text, hideAfter) {
+    const banner = $('#update-banner');
+    if (!banner) return;
+    updateState = state;
+    banner.hidden = false;
+    banner.dataset.state = state;
+    $('#update-banner-text').textContent = text;
+    const updateBtn = $('#update-btn');
+    const dismissBtn = $('#update-dismiss');
+    if (state === 'available') {
+      updateBtn.hidden = false;
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Update';
+      dismissBtn.hidden = false;
+    } else if (state === 'checking') {
+      updateBtn.hidden = true;
+      dismissBtn.hidden = true;
+    } else {
+      updateBtn.hidden = false;
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Check again';
+      dismissBtn.hidden = false;
+    }
+    if (hideAfter) {
+      setTimeout(() => {
+        const modal = $('#settings-modal');
+        if (updateState === state && (!modal || modal.hidden)) {
+          banner.hidden = true;
+          updateState = 'idle';
+        }
+      }, hideAfter);
+    }
+  }
+
+  async function checkUpdate(force) {
+    if (updateState === 'checking') return;
+    const banner = $('#update-banner');
+    if (!banner) return;
+    setBanner('checking', 'Checking for updates…');
     try {
-      const r = await api('/api/update-info');
-      if (!r.ok) return;
+      const r = await api('/api/update-info' + (force ? '?refresh=1' : ''));
+      if (!r.ok) throw new Error('bad status ' + r.status);
       const info = await r.json();
       if (info.latest && info.latest !== info.current) {
         lastKnownLatest = info.latest;
@@ -1146,19 +1289,25 @@
         try {
           dismissed = localStorage.getItem('cgpt-update-dismiss');
         } catch (e) {}
-        if (dismissed !== info.latest) {
-          $('#update-banner').hidden = false;
-          $('#update-banner-text').textContent = 'Update available: v' + info.current + ' → v' + info.latest;
+        if (dismissed === info.latest) {
+          banner.hidden = true;
+          updateState = 'idle';
+        } else {
+          setBanner('available', 'Update available: v' + info.current + ' → v' + info.latest);
         }
+      } else {
+        setBanner('uptodate', 'You are up to date (v' + info.current + ')', 6000);
       }
-    } catch (e) {}
+    } catch (e) {
+      setBanner('failed', 'Update check failed — are you online?', 6000);
+    }
   }
 
-  let lastKnownLatest = null;
-
   $('#update-dismiss').addEventListener('click', () => {
-    $('#update-banner').hidden = true;
-    if (lastKnownLatest) {
+    const banner = $('#update-banner');
+    banner.hidden = true;
+    updateState = 'idle';
+    if (lastKnownLatest && banner.dataset.state === 'available') {
       try {
         localStorage.setItem('cgpt-update-dismiss', lastKnownLatest);
       } catch (e) {}
@@ -1167,6 +1316,10 @@
 
   $('#update-btn').addEventListener('click', async () => {
     const btn = $('#update-btn');
+    if (updateState !== 'available') {
+      checkUpdate(true);
+      return;
+    }
     btn.disabled = true;
     btn.textContent = 'Updating…';
     try {
@@ -1187,6 +1340,19 @@
     }
   });
 
+  $('#settings-update-btn').addEventListener('click', async () => {
+    const btn = $('#settings-update-btn');
+    const status = $('#settings-update-status');
+    btn.disabled = true;
+    status.textContent = 'Checking…';
+    await checkUpdate(true);
+    btn.disabled = false;
+    if (updateState === 'available') status.textContent = 'New version available — see the banner above.';
+    else if (updateState === 'uptodate') status.textContent = 'You are up to date.';
+    else if (updateState === 'failed') status.textContent = 'Check failed.';
+    else status.textContent = '';
+  });
+
   $('#menu-btn').addEventListener('click', () => {
     document.body.classList.toggle('sidebar-open');
   });
@@ -1201,8 +1367,8 @@
   });
 
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SpeechRec) {
-    const mic = $('#mic');
+  const mic = $('#mic');
+  if (mic && SpeechRec && window.isSecureContext) {
     mic.hidden = false;
     let rec = null;
     let listening = false;
@@ -1213,6 +1379,7 @@
         } catch (e) {}
         return;
       }
+      stopSpeech();
       rec = new SpeechRec();
       rec.lang = 'en-US';
       rec.interimResults = true;
@@ -1238,6 +1405,10 @@
         stopListening();
       }
     });
+  } else if (mic) {
+    mic.hidden = false;
+    mic.disabled = true;
+    mic.title = 'Voice input needs a secure page (https or localhost). Enable the HTTPS option in run.bat to use the mic over your LAN.';
   }
 
   async function init() {

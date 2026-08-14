@@ -62,12 +62,12 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
 - **Private per account** — each account (or browser, without login) gets its own chat list and history; no one else on your LAN can see your chats
 - **Request queue** — messages are processed one at a time; clients wait their turn (per-client depth cap when auth is on)
-- **Stop generation** — cancel the current response
+- **Stop generation** — cancel the current response, or your queued one (each user can only cancel their own; master can cancel anything)
 - **Persistent profile** — cookies and session data survive restarts in `./profile`
 - **Auto driver self-healing** — if ChatGPT changes its page structure, the driver detects the new selectors (with heuristic fallbacks), caches them to `selectors.json`, and keeps working without code changes
 - **OpenAI-compatible API** — `POST /v1/chat/completions` (stream + non-stream) so local apps, CLIs, and IDEs can use this as a drop-in endpoint
 - **In-app updates** — the UI checks GitHub for new releases and can update + restart the server with one click
-- **Voice input** — dictation button in the composer (browser SpeechRecognition)
+- **Voice** — dictation button in the composer (browser SpeechRecognition; needs a secure page, i.e. https or localhost) plus **spoken replies**: assistant answers are read aloud with Microsoft Edge neural voices (Aria — the same voice ChatGPT uses), streamed free from the server with no API keys. Toggle "Speak replies" and pick a voice in Settings, or press Play on any reply
 - **Mobile layout** — sidebar becomes a slide-in drawer on small screens
 - **MIT licensed**
 
@@ -155,6 +155,10 @@ All options are environment variables:
 | `ALLOW_SIGNUP` | `1`                   | Set to `0` to disable self-registration (accounts must then be created by the admin) |
 | `ENCRYPT_KEY` | *(none)*                | If set, `chats.json` and `settings.json` are encrypted at rest (AES-256-GCM) |
 | `UPDATE_CHECK` | `1`                  | Set to `0` to disable the GitHub update check           |
+| `HTTPS`       | `0`                     | Set to `1` to also serve HTTPS on `PORT + 1` with an auto-generated self-signed certificate (auto-trusted in the Windows user store). Needed for the **mic** (browser speech recognition only works on secure pages) |
+| `HTTPS_PORT`  | `PORT + 1`              | Override the HTTPS port when `HTTPS=1`                 |
+| `MAX_PROMPT`  | `500000`                | Max characters per message — ChatGPT's guest-mode ceiling is the model context (~128k tokens ≈ 500k chars). The web UI and API reject larger messages with a clear error |
+| `TTS_MAX_CHARS` | `20000`               | Max characters that can be spoken in one `/api/tts` call |
 
 **Examples**
 
@@ -277,6 +281,10 @@ Master-token-only: creates a per-client token for a programmatic client. Body: `
 
 `update-info` reports the current version and the latest GitHub release. `update` pulls + reinstalls (master token required when auth is on) and `restart` restarts the server process.
 
+### `GET /api/tts?text=...&voice=...`
+
+Streams the text as MP3 speech (Microsoft Edge neural voices — free, no keys). `text` is capped at `TTS_MAX_CHARS` (20 000) and synthesized in ~1800-character chunks. Default voice `en-US-AriaNeural` (the voice ChatGPT uses). Used by "Speak replies" and the Play button on replies.
+
 ### `GET /api/status`
 
 Returns browser status, queue length, captcha/gate state, LAN IPs, and port.
@@ -390,6 +398,12 @@ Click **New chat** in the sidebar, or delete `./profile` and restart.
 
 ---
 
+## Voice
+
+- **Mic (speech-to-text):** the composer's mic button uses the browser's built-in speech recognition. Browsers only expose the mic to **secure pages**, so it works on `http://localhost` and on the HTTPS server — enable `HTTPS` in `run.bat` (or set `HTTPS=1`) to use the mic from other devices on your LAN. The first visit shows a certificate warning once; on Windows the server installs its self-signed certificate into your user store automatically, so later visits are clean.
+- **Spoken replies (text-to-speech):** toggle "Speak replies" in Settings to have every answer read aloud with a neural voice (Aria by default — ChatGPT's own voice), or press **Play** on any message. Audio streams from the server via `/api/tts` (Microsoft Edge voices, no API keys) and works on both HTTP and HTTPS pages.
+- If the mic button is greyed out, you're on a plain-HTTP LAN page — open the https URL shown in the sidebar instead.
+
 ## Security
 
 - **Recommended setup for anything beyond your own PC:** run `run.bat` (or set env vars) with a password. That enables login: accounts are created in the UI, passwords are stored scrypt-hashed in `users.json`, and each account gets its own random session token (`clients.json`, stored hashed). Chats are scoped per account, not per browser, so an account's history follows it across devices — and other users can never read or stop its chats.
@@ -413,7 +427,7 @@ Click **New chat** in the sidebar, or delete `./profile` and restart.
 - BETA software; upstream markup and APIs can change without notice and break the driver until updated.
 - Usage is capped by OpenAI's own limits.
 - **Cross-restart model memory is best-effort:** after a restart, the model gets the whole saved transcript re-fed as hidden context, so it usually recalls everything — but the model may answer hesitantly about "secret" details (ChatGPT's policy behavior, not a bug).
-- No image generation or file uploads — by design; this is a text-only chat (voice input is available in the UI via browser SpeechRecognition).
+- No image generation or file uploads — by design; this is a text-only chat. Voice is covered by the mic button + spoken replies (see Voice below).
 - No model selection — ChatGPT picks the model for chats.
 - Chats share one queue and one browser; heavy concurrent use across a LAN can slow responses.
 - Upstream services can change, restrict, or remove access at any time.
@@ -493,6 +507,8 @@ This project started because I didn't feel like waiting for usage limits to rese
 ## Updates
 
 Recent changes:
+
+- **v7.1** — Voice that actually works + cancel & limits. **Spoken replies:** server-side TTS endpoint (`/api/tts`) streaming Microsoft Edge neural voices — enable "Speak replies" in Settings and ChatGPT's answers are read aloud (Aria — the same voice ChatGPT uses), or press Play on any reply; no API keys. **Mic fixed:** browsers only allow the mic on secure pages, so voice input silently failed over plain LAN HTTP — the server now has an optional HTTPS mode (`HTTPS=1` / run.bat wizard) with an auto-generated self-signed certificate that is auto-trusted in the Windows user store; the mic enables itself on https/localhost and explains itself otherwise. **Cancelling:** `/api/stop` now cancels your queued job too (with a clean "Stopped." state instead of an error), is properly scoped per user, and no longer kills another user's running generation. **Message cap:** research showed ChatGPT guest mode has no separate per-message cap — the real ceiling is the model context (~128k tokens ≈ 500k characters), so the default `MAX_PROMPT` is now 500k characters (was 5 MB), enforced in the web UI, `/api/chat` and the OpenAI API with clear errors, and configurable via `MAX_PROMPT`. **Update check** now shows live status (checking / up-to-date / failed + "Check again") and the settings panel has a manual "Check for updates". 51 tests green.
 
 - **v7** — Resilience & hardening round. **Driver self-healing:** the driver now re-tests its page selectors on every send, falls back to heuristic patterns, and caches the working ones to `selectors.json` — ChatGPT markup changes no longer need code fixes; every step of the send path (fill → enable → click → verify) uses the healed selectors. **Multi-user accounts:** when `AUTH_TOKEN` is set, the UI shows a login screen — create accounts (scrypt-hashed in `users.json`), log in from any device, and chats follow your account, not your browser. **Security per review:** removed the `?token=` query auth and the `GET /api/chat?prompt=` endpoint, per-client tokens (`/api/register`/`/api/login`), `/api/stop` scoped to the job owner, `/api/reset-session`/`/api/update`/`/api/restart` master-token-only, `HOST` env for this-PC-only binding, per-client rate limits + queue-depth cap, login throttling, optional at-rest AES-256-GCM encryption via `ENCRYPT_KEY`, `clients.json`/`users.json`/`selectors.json` git-ignored. **OpenAI-compatible API:** `POST /v1/chat/completions` (stream + non-stream, session continuity via `user`). **UI:** boot screen with logo light-fill + progress %, update banner with one-click update/restart, voice input (mic), mobile drawer sidebar, removed the flaky in-tab preview iframe (Run/Open now opens the preview in a new tab), fixed "clicking a chat doesn't open it" (active-chat load guard). **`run.bat` wizard** writes an editable `web.env` (port, host, password, signup, headed, timeout, encryption). 47 tests green.
 

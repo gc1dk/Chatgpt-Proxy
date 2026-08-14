@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 title ChatGPT Gateway
 
@@ -71,6 +71,9 @@ if "%HEADED%"=="" set HEADED=n
 if /i "%HEADED%"=="y" (set HEADED=1) else (set HEADED=0)
 set /p TIMEOUT=  Minutes to wait for one reply before giving up [5]: 
 if "%TIMEOUT%"=="" set TIMEOUT=5
+set /p HTTPS=   Enable voice mode (mic + spoken replies) via https? (y/n) [n]: 
+if "%HTTPS%"=="" set HTTPS=n
+if /i "%HTTPS%"=="y" (set HTTPS=1) else (set HTTPS=0)
 set /p KEY=      Encrypt saved chats with a secret key (optional, anything): 
 set /p UPD=      Auto-check for updates? (y/n) [y]: 
 if "%UPD%"=="" set UPD=y
@@ -83,6 +86,7 @@ if /i "%UPD%"=="n" (set UPD=0) else (set UPD=1)
   echo ALLOW_SIGNUP=%ALLOW_SIGNUP%
   echo HEADED=%HEADED%
   echo TIMEOUT=%TIMEOUT%000
+  echo HTTPS=%HTTPS%
   if not "%KEY%"=="" echo ENCRYPT_KEY=%KEY%
   echo UPDATE_CHECK=%UPD%
 )
@@ -106,6 +110,10 @@ echo  Starting the gateway... the web UI opens automatically.
 echo  Close this window to stop the server.
 echo.
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr /r /c:":%PORT% .*LISTENING"') do taskkill /F /PID %%a >nul 2>&1
+if "%HTTPS%"=="1" (
+  set /a HTTPS_PORT=%PORT%+1
+  for /f "tokens=5" %%a in ('netstat -ano ^| findstr /r /c:":!HTTPS_PORT! .*LISTENING"') do taskkill /F /PID %%a >nul 2>&1
+)
 
 node server.js
 echo.
