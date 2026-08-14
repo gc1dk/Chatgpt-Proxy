@@ -31,13 +31,13 @@ echo    ChatGPT Gateway - setup wizard / launcher
 echo  ============================================
 echo.
 if exist web.env (
-  echo  Settings file: web.env  (currently saved)
+  echo  Settings file: web.env  - currently saved
 ) else (
-  echo  Settings file: web.env  (not created yet)
+  echo  Settings file: web.env  - not created yet
 )
 echo.
 echo  1) Run now
-echo  2) Setup / edit settings (wizard)
+echo  2) Setup / edit settings - wizard
 echo  3) Reset settings to defaults
 echo  4) Exit
 echo.
@@ -56,26 +56,27 @@ goto menu
 :wizard
 echo.
 echo  Enter the values below. Press Enter to keep the default shown in brackets.
-echo  Leave the password empty for no login (anyone on the LAN can use it - not recommended!).
+echo  Leave the password empty for no login - anyone on the LAN can use it.
 echo.
 set /p PORT=     Port [3000]: 
 if "%PORT%"=="" set PORT=3000
-set /p HOST=     Bind to (0.0.0.0 = whole LAN, 127.0.0.1 = this PC only) [0.0.0.0]: 
+set /p HOST=     Bind to - 0.0.0.0=whole LAN, 127.0.0.1=this PC only [0.0.0.0]: 
 if "%HOST%"=="" set HOST=0.0.0.0
-set /p PASS=     Password for login (empty = no login): 
-set /p SIGNUP=   Allow anyone to create an account? (y/n) [y]: 
+set /p PASS=     Password for login - empty = no login: 
+set /p SIGNUP=   Allow anyone to create an account? y/n [y]: 
 if "%SIGNUP%"=="" set SIGNUP=y
 if /i "%SIGNUP%"=="n" (set ALLOW_SIGNUP=0) else (set ALLOW_SIGNUP=1)
-set /p HEADED=   Show the ChatGPT browser window (needed once to solve a captcha)? (y/n) [n]: 
+set /p HEADED=   Show the ChatGPT browser window - needed once for a captcha? y/n [n]: 
 if "%HEADED%"=="" set HEADED=n
 if /i "%HEADED%"=="y" (set HEADED=1) else (set HEADED=0)
 set /p TIMEOUT=  Minutes to wait for one reply before giving up [5]: 
 if "%TIMEOUT%"=="" set TIMEOUT=5
-set /p HTTPS=   Enable voice mode (mic + spoken replies) via https? (y/n) [n]: 
+set /a TIMEOUT_MS=%TIMEOUT%*60000
+set /p HTTPS=    Enable voice mode - mic + spoken replies over https? y/n [n]: 
 if "%HTTPS%"=="" set HTTPS=n
 if /i "%HTTPS%"=="y" (set HTTPS=1) else (set HTTPS=0)
-set /p KEY=      Encrypt saved chats with a secret key (optional, anything): 
-set /p UPD=      Auto-check for updates? (y/n) [y]: 
+set /p KEY=      Encrypt saved chats with a secret key - optional, anything: 
+set /p UPD=      Auto-check for updates? y/n [y]: 
 if "%UPD%"=="" set UPD=y
 if /i "%UPD%"=="n" (set UPD=0) else (set UPD=1)
 
@@ -85,7 +86,7 @@ if /i "%UPD%"=="n" (set UPD=0) else (set UPD=1)
   if not "%PASS%"=="" echo AUTH_TOKEN=%PASS%
   echo ALLOW_SIGNUP=%ALLOW_SIGNUP%
   echo HEADED=%HEADED%
-  echo TIMEOUT=%TIMEOUT%000
+  echo TIMEOUT=%TIMEOUT_MS%
   echo HTTPS=%HTTPS%
   if not "%KEY%"=="" echo ENCRYPT_KEY=%KEY%
   echo UPDATE_CHECK=%UPD%
@@ -97,7 +98,7 @@ goto menu
 :run
 if not exist web.env (
   echo.
-  echo  No settings yet - running with defaults (http://localhost:3000, no login).
+  echo  No settings yet - running with defaults: http://localhost:3000, no login.
   echo  Use option 2 to set a password.
   echo.
 )
@@ -117,6 +118,6 @@ if "%HTTPS%"=="1" (
 
 node server.js
 echo.
-echo  Server stopped (or it failed to start - read the message above).
+echo  Server stopped - or it failed to start; read the message above.
 pause
 goto menu

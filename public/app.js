@@ -1218,9 +1218,11 @@
     }
   }
 
+  let bootStart = 0;
   function boot(step, label) {
     const overlay = $('#boot-overlay');
     if (!overlay || overlay.hidden) return;
+    if (!bootStart) bootStart = Date.now();
     const pct = Math.max(4, Math.min(100, Math.round(step)));
     const bar = $('#boot-bar');
     const light = $('#boot-logo .boot-light');
@@ -1231,9 +1233,11 @@
     if (label) $('#boot-status').textContent = label;
     if (pct >= 100) {
       overlay.classList.add('done');
+      const waited = Date.now() - bootStart;
+      const hold = Math.max(900, 2200 - waited);
       setTimeout(() => {
         overlay.hidden = true;
-      }, 800);
+      }, hold);
     }
   }
 
@@ -1407,8 +1411,14 @@
     });
   } else if (mic) {
     mic.hidden = false;
-    mic.disabled = true;
-    mic.title = 'Voice input needs a secure page (https or localhost). Enable the HTTPS option in run.bat to use the mic over your LAN.';
+    mic.disabled = false;
+    mic.title = 'Voice input needs a secure page (https or localhost). Open the https URL shown in the sidebar, or enable the HTTPS option in run.bat.';
+    mic.addEventListener('click', () => {
+      const hint = 'Voice input needs a secure page (https or localhost).\n\nTo use the mic over your LAN, enable the HTTPS option in run.bat (setup wizard), then open the https URL shown in the sidebar.';
+      try {
+        alert(hint);
+      } catch (e) {}
+    });
   }
 
   async function init() {

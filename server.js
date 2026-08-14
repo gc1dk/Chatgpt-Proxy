@@ -1097,7 +1097,10 @@ async function start() {
     if (HTTPS) console.log(`HTTPS set: voice (mic) works on https://localhost:${HTTPS_PORT} (and the LAN https URLs)`);
     console.log(`Max prompt: ${MAX_PROMPT.toLocaleString()} characters`);
     if (HEADED) console.log('HEADED mode: a visible browser window will open (solve any captcha once, cookies persist in ./profile)');
-    openBrowser(`http://${(ips[0] || 'localhost')}:${PORT}`);
+    const openUrl = HTTPS
+      ? `https://${(ips[0] || 'localhost')}:${HTTPS_PORT}`
+      : `http://${(ips[0] || 'localhost')}:${PORT}`;
+    openBrowser(openUrl);
   });
 }
 
