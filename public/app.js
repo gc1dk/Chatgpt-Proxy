@@ -1036,6 +1036,134 @@
     applyTheme(next);
   });
 
+  $('#api-btn').addEventListener('click', async () => {
+    const loc = window.location;
+    const base = loc.origin + '/v1';
+    $('#api-base-url').value = base;
+    let authVal = '';
+    let authHint = '';
+    let tokenAvailable = false;
+    let tokenKind = '';
+    let storedMaster = '';
+    try { storedMaster = localStorage.getItem('cgpt-token') || ''; } catch (e) {}
+    if (session && session.clientToken) {
+      authVal = 'X-Client-Id: ' + activeClientId() + '\nx-client-token: ' + session.clientToken;
+      tokenAvailable = true;
+      tokenKind = 'account';
+    } else if (storedMaster) {
+      authVal = 'Authorization: Bearer ' + storedMaster;
+      tokenAvailable = true;
+      tokenKind = 'master';
+    }
+    const authWrap = $('#api-auth-wrap');
+    if (tokenAvailable) {
+      authWrap.hidden = false;
+      $('#api-auth-value').value = authVal;
+      authHint =
+        tokenKind === 'account'
+          ? 'These headers come from your logged-in account. Treat your token like a password.'
+          : 'This is the master token you entered. Master access can stop/reset the server.';
+    } else {
+      authWrap.hidden = true;
+      authHint = 'No token. Get one by logging in, or entering the master token (it will remember it).';
+    }
+    $('#api-auth-hint').textContent = authHint;
+    const host = loc.host;
+    const docs =
+      '# Base URL\n' + base + '\n\n' +
+      '# List models\n' +
+      'curl ' + base + '/models\n\n' +
+      '# Non-stream chat completion\n' +
+      'curl ' + base + '/chat/completions \\\n' +
+      '  -H "Content-Type: application/json" \\\n' +
+      (tokenKind === 'master' ? '  -H "Authorization: Bearer ' + storedMaster + '" \\\n' :
+        tokenKind === 'account' ? '  -H "X-Client-Id: ' + activeClientId() + '" -H "x-client-token: ' + session.clientToken + '" \\\n' : '') +
+      '  -d \'{"model":"chatgpt-gateway","messages":[{"role":"user","content":"Hello"}]}\'\n\n' +
+      '# Streaming (SSE)\n' +
+      'curl -N ' + base + '/chat/completions \\\n' +
+      '  -H "Content-Type: application/json" \\\n' +
+      (tokenKind === 'master' ? '  -H "Authorization: Bearer ' + storedMaster + '" \\\n' :
+        tokenKind === 'account' ? '  -H "X-Client-Id: ' + activeClientId() + '" -H "x-client-token: ' + session.clientToken + '" \\\n' : '') +
+      '  -d \'{"model":"chatgpt-gateway","stream":true,"messages":[{"role":"user","content":"Hello"}]}\'\n\n' +
+      '# Notes\n' +
+      '- model: any string (the underlying model is ChatGPT\'s current page model).\n' +
+      '- session via "user": "my-key" or header "x-session-id" keeps one chat per key.\n' +
+      '- max message length: ' + (serverMaxPrompt || 500000).toLocaleString() + ' characters.\n' +
+      '- Try the Quick test above — it runs a real request from this page.';
+    $('#api-docs').textContent = docs;
+    $('#api-test-output').hidden = true;
+    $('#api-test-output').textContent = '';
+    $('#api-modal').hidden = false;
+    input.blur();
+  });
+
+  $('#api-close').addEventListener('click', () => {
+    $('#api-modal').hidden = true;
+  });
+  $('#api-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'api-modal') $('#api-modal').hidden = true;
+  });
+  $('#api-copy-base').addEventListener('click', () => copyText($('#api-base-url').value));
+  $('#api-copy-auth').addEventListener('click', () => copyText($('#api-auth-value').value));
+  $('#api-test-btn').addEventListener('click', async () => {
+    const out = $('#api-test-output');
+    const btn = $('#api-test-btn');
+    const msg = ($('#api-test-input').value || '').trim() || 'Hello';
+    btn.disabled = true;
+    btn.textContent = 'Waiting…';
+    out.hidden = false;
+    out.textContent = 'streaming…';
+    try {
+      const res = await api('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'chatgpt-gateway', stream: true, messages: [{ role: 'user', content: msg }] }),
+      });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let text = '';
+      out.textContent = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          for (const line of block.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = line.slice(6).trim();
+            if (payload === '[DONE]') continue;
+            try {
+              const ev = JSON.parse(payload);
+              const delta = ev.choices && ev.choices[0] && ev.choices[0].delta;
+              if (delta && delta.content) {
+                text += delta.content;
+                out.textContent = text;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+      if (!text) {
+        try {
+          const j = await res.clone().json();
+          out.textContent = JSON.stringify(j, null, 2);
+        } catch (e) {
+          out.textContent = '(empty response)';
+        }
+      }
+    } catch (e) {
+      out.textContent = 'Error: ' + String((e && e.message) || e);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send test';
+    }
+  });
+
   $('#settings-btn').addEventListener('click', () => {
     api('/api/settings')
       .then((r) => r.json())

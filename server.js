@@ -76,7 +76,10 @@ function clientIdOf(req) {
   return String(req.header('x-client-id') || 'legacy').slice(0, 64);
 }
 
-app.use('/api', (req, res, next) => {
+app.use('/api', requireAuth);
+app.use('/v1', requireAuth);
+
+function requireAuth(req, res, next) {
   req.masterAuth = false;
   if (!AUTH_TOKEN) return next();
   const fullPath = req.baseUrl + req.path;
@@ -92,8 +95,8 @@ app.use('/api', (req, res, next) => {
     req.clientVerified = true;
     return next();
   }
-  res.status(401).json({ error: 'unauthorized' });
-});
+  res.status(401).json({ error: { message: 'unauthorized — send Authorization: Bearer <master-token> or X-Client-Id + X-Client-Token', type: 'invalid_request_error' } });
+}
 
 // ---- user accounts (multi-user): login issues a per-account client token ----
 const users = readJson(USERS_FILE, {});
@@ -199,6 +202,22 @@ app.use('/api', (req, res, next) => {
   const limit = req.path === '/api/chat' ? 30 : 120;
   if (b.count > limit) {
     res.status(429).json({ error: 'rate limit exceeded, slow down' });
+    return;
+  }
+  next();
+});
+
+app.use('/v1', (req, res, next) => {
+  const key = clientIdOf(req) + '|v1' + req.path;
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b || now - b.start > 60000) {
+    b = { start: now, count: 0 };
+    rateBuckets.set(key, b);
+  }
+  b.count += 1;
+  if (b.count > 60) {
+    res.status(429).json({ error: { message: 'rate limit exceeded, slow down', type: 'rate_limit_error' } });
     return;
   }
   next();
@@ -746,6 +765,7 @@ app.get('/api/status', async (req, res) => {
     https: HTTPS,
     httpsPort: HTTPS_PORT,
     maxPrompt: MAX_PROMPT,
+    authRequired: !!AUTH_TOKEN,
     activeChatId: store.activeChatId,
     chatCount: store.chats.length,
   });
@@ -999,20 +1019,21 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-app.use('/v1', (req, res, next) => {
-  const key = clientIdOf(req) + '|' + req.path;
-  const now = Date.now();
-  let b = rateBuckets.get(key);
-  if (!b || now - b.start > 60000) {
-    b = { start: now, count: 0 };
-    rateBuckets.set(key, b);
-  }
-  b.count += 1;
-  if (b.count > 60) {
-    res.status(429).json({ error: { message: 'rate limit exceeded, slow down', type: 'rate_limit_error' } });
-    return;
-  }
-  next();
+app.get('/v1/models', (req, res) => {
+  res.json({
+    object: 'list',
+    data: [
+      {
+        id: 'chatgpt-gateway',
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'openai',
+        permission: [],
+        root: 'chatgpt-gateway',
+        parent: null,
+      },
+    ],
+  });
 });
 
 function openBrowser(url) {

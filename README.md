@@ -57,7 +57,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Code tab** — every code block in a reply becomes an artifact (per language, version picker, live preview, run, download, copy) collected in a dedicated Code workspace
 - **Chat export** — download any chat as a Markdown file (`.md`) from the sidebar
 - **Optional auth + accounts** — set `AUTH_TOKEN` to enable login. Users can create accounts in the UI (username + password); chats belong to the account, not the browser, so they follow you across devices. A master-token mode is also available for API clients
-- **Offline test suite** — `npm test` runs 48 automated tests (driver, API, auth, UI) against a mock ChatGPT page, no real ChatGPT account or network access needed
+- **Offline test suite** — `npm test` runs 54 automated tests (driver, API, auth, UI) against a mock ChatGPT page, no real ChatGPT account or network access needed
 - **Settings** — theme, system prompt, and a "clear cookies / fresh session" button
 - **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
 - **Private per account** — each account (or browser, without login) gets its own chat list and history; no one else on your LAN can see your chats
@@ -65,7 +65,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Stop generation** — cancel the current response, or your queued one (each user can only cancel their own; master can cancel anything)
 - **Persistent profile** — cookies and session data survive restarts in `./profile`
 - **Auto driver self-healing** — if ChatGPT changes its page structure, the driver detects the new selectors (with heuristic fallbacks), caches them to `selectors.json`, and keeps working without code changes
-- **OpenAI-compatible API** — `POST /v1/chat/completions` (stream + non-stream) so local apps, CLIs, and IDEs can use this as a drop-in endpoint
+- **OpenAI-compatible API** — `POST /v1/chat/completions` (stream + non-stream) + `GET /v1/models`, so local apps, CLIs, and IDEs can use this as a drop-in endpoint; a built-in in-app **API panel** (top-right arrow button) shows your base URL, auth, copy-ready `curl`, and a live test
 - **In-app updates** — the UI checks GitHub for new releases and can update + restart the server with one click
 - **Voice** — dictation button in the composer (browser SpeechRecognition; needs a secure page, i.e. https or localhost) plus **spoken replies**: assistant answers are read aloud with Microsoft Edge neural voices (Aria — the same voice ChatGPT uses), streamed free from the server with no API keys. Toggle "Speak replies" and pick a voice in Settings, or press Play on any reply
 - **Mobile layout** — sidebar becomes a slide-in drawer on small screens
@@ -216,9 +216,13 @@ Returns an **SSE stream** with these event types:
 | `done`  | `{ text }`                                | Reply complete                            |
 | `error` | `{ code, retryAfter, text, message }`     | Something went wrong (`rate_limited`, `timeout`, `internal`) |
 
+### `GET /v1/models`
+
+Returns the OpenAI-style model list (`chatgpt-gateway`), so clients that auto-discover models (editors, `litellm`) work out of the box.
+
 ### `POST /v1/chat/completions` (OpenAI-compatible)
 
-Drop-in endpoint for local apps, CLIs, and IDEs:
+Drop-in endpoint for local apps, CLIs, and IDEs. There's a built-in **API panel** in the web UI (the arrow icon in the top-right corner): it shows your base URL + auth headers, a live "Send test" that streams a real request, and copy-ready `curl` examples — no need to read this page to get started.
 
 ```bash
 curl http://localhost:3000/v1/chat/completions \
@@ -226,12 +230,13 @@ curl http://localhost:3000/v1/chat/completions \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
+- `model`: any string — the underlying model is whatever the driven ChatGPT page is using
 - `stream: true` → SSE chunks in OpenAI's format (`chat.completion.chunk`, ends with `[DONE]`)
 - `stream: false` → a single `chat.completion` JSON response
 - `user: "<session-id>"` (or `X-Session-Id` header) → a persistent session whose history stays in the chat transcript
 - Without `user`, each request is a one-off chat
 - System messages are accepted but not injected into ChatGPT's page; only the last user/assistant message is sent. The real ChatGPT page holds the conversation context
-- Auth: same rules as `/api/*` (master Bearer or client token)
+- Auth (same rules as `/api/*`): when `AUTH_TOKEN` is set, send `Authorization: Bearer <master>` **or** `X-Client-Id: u-<username>` + `X-Client-Token: <token>` (your account token from the API panel / login). Without `AUTH_TOKEN` the API is open like the rest of the server.
 
 ### `POST /api/new-chat`
 
@@ -507,6 +512,8 @@ This project started because I didn't feel like waiting for usage limits to rese
 ## Updates
 
 Recent changes:
+
+- **v7.2** — The API is a built-in feature. **In-app API panel** (arrow icon, top-right corner): shows your base URL + auth headers, a live "Send test" that streams a real `/v1/chat/completions` request, and copy-ready `curl` examples — point any app at this server without reading the docs. **`GET /v1/models`** added for clients that auto-discover models. **Security fix:** the `/v1` OpenAI endpoints were accidentally left open when `AUTH_TOKEN` was set (only `/api` was guarded) — auth is now shared, and `/v1` gets its own rate limiter mounted before the route (the old one was dead code after the route). `/api/status` reports `authRequired`. 54 tests green.
 
 - **v7.1** — Voice that actually works + cancel & limits. **Spoken replies:** server-side TTS endpoint (`/api/tts`) streaming Microsoft Edge neural voices — enable "Speak replies" in Settings and ChatGPT's answers are read aloud (Aria — the same voice ChatGPT uses), or press Play on any reply; no API keys. **Mic fixed:** browsers only allow the mic on secure pages, so voice input silently failed over plain LAN HTTP — the server now has an optional HTTPS mode (`HTTPS=1` / run.bat wizard) with an auto-generated self-signed certificate that is auto-trusted in the Windows user store; the mic enables itself on https/localhost and explains itself otherwise. **Cancelling:** `/api/stop` now cancels your queued job too (with a clean "Stopped." state instead of an error), is properly scoped per user, and no longer kills another user's running generation. **Message cap:** research showed ChatGPT guest mode has no separate per-message cap — the real ceiling is the model context (~128k tokens ≈ 500k characters), so the default `MAX_PROMPT` is now 500k characters (was 5 MB), enforced in the web UI, `/api/chat` and the OpenAI API with clear errors, and configurable via `MAX_PROMPT`. **Update check** now shows live status (checking / up-to-date / failed + "Check again") and the settings panel has a manual "Check for updates". 51 tests green.
 

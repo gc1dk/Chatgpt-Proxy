@@ -232,3 +232,13 @@ test('POST endpoints also require the token', async () => {
   const yes = await rawReq('/api/new-chat', { Authorization: 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, 'POST');
   assert.equal(yes.status, 200);
 });
+
+test('OpenAI /v1 endpoints are also protected when AUTH_TOKEN is set', async () => {
+  const no = await rawReq('/v1/models');
+  assert.equal(no.status, 401, 'GET /v1/models without token should be 401');
+  const yes = await rawReq('/v1/models', { Authorization: 'Bearer ' + TOKEN });
+  assert.equal(yes.status, 200);
+  const list = JSON.parse(yes.raw);
+  assert.equal(list.object, 'list');
+  assert.ok(Array.isArray(list.data) && list.data.length);
+});
