@@ -21,6 +21,7 @@ An open-source proxy that gives you a ChatGPT-style chat experience by driving t
 - [LAN Access](#lan-access)
 - [API](#api)
 - [Discord Bot](#discord-bot)
+- [IDE / CLI Guide](docs/ide-cli.md) — use the gateway in Cursor-free IDEs, CLIs, Neovim, Obsidian, etc.
 - [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
@@ -241,6 +242,8 @@ curl http://localhost:3000/v1/chat/completions \
 - Without `user`, each request is a one-off chat
 - System messages are accepted but not injected into ChatGPT's page; only the last user/assistant message is sent. The real ChatGPT page holds the conversation context
 - Auth (same rules as `/api/*`): when `AUTH_TOKEN` is set, send `Authorization: Bearer <master>` **or** `X-Client-Id: u-<username>` + `X-Client-Token: <token>` (your account token from the API panel / login). Without `AUTH_TOKEN` the API is open like the rest of the server.
+
+> **Point your IDE / CLI at it:** see [docs/ide-cli.md](docs/ide-cli.md) — ready-made configs for aichat, `llm`, aider, LiteLLM, opencode, VS Code Continue, Cline/Roo Code, Zed, Neovim, and Obsidian, plus auth and session tips.
 
 ### `POST /api/new-chat`
 
@@ -545,7 +548,7 @@ This project started because I didn't feel like waiting for usage limits to rese
 
 Recent changes:
 
-- **v7.3** — Never-fail unlimited context + a full Discord bot. **Unlimited context (Auto):** long chats are auto-compacted with rolling summaries — when a restored/refreshed context exceeds `CONTEXT_BUDGET` (default 320 000 chars), the oldest messages are folded into a summary via a hidden ChatGPT turn and only the bounded tail is fed back, so a chat can grow forever without ever hitting "message too long"; hidden prompt turns (seeds, memory feeds, summary prompts) are now stripped from transcripts generically, and a failed submit self-heals once by reopening a fresh compacted page and retrying. **Discord bot (`discord/`):** a complete free bot in one editable file — `/chat` + `/ask` through the gateway, per-user sessions, personas and `/setprompt`, **voice chat** (Vosk local speech-to-text + Edge TTS spoken replies), **`/auto-mod`** (custom per-server policy, warn/delete/timeout, report channel, DM warnings, rate-limited), **`/verify`** one-time-code role gating, prefix commands (`!chat`, `!voice join`, …), renameable via `botName`. Its own `package.json`, `config.example.json`, `personas.json`, and README. 59 tests green.
+- **v7.3** — Never-fail unlimited context + a full Discord bot. **Unlimited context (Auto):** long chats are auto-compacted with rolling summaries — when a restored/refreshed context exceeds `CONTEXT_BUDGET` (default 320 000 chars), the oldest messages are folded into a summary via a hidden ChatGPT turn and only the bounded tail is fed back, so a chat can grow forever without ever hitting "message too long"; hidden prompt turns (seeds, memory feeds, summary prompts) are now stripped from transcripts generically, and a failed submit self-heals once by reopening a fresh compacted page and retrying. **Discord bot (`discord/`):** a complete free bot in one editable file — `/chat` + `/ask` through the gateway, per-user sessions, personas and `/setprompt`, **voice chat** (Vosk local speech-to-text + Edge TTS spoken replies), **`/auto-mod`** (custom per-server policy, warn/delete/timeout, report channel, DM warnings, rate-limited), **`/verify`** one-time-code role gating, prefix commands (`!chat`, `!voice join`, …), renameable via `botName`. Its own `package.json`, `config.example.json`, `personas.json`, and README, plus a `Run-bot.bat` launcher. New **`docs/ide-cli.md`** guide: ready-made configs for aichat, `llm`, aider, LiteLLM, opencode, VS Code Continue, Cline/Roo Code, Zed, Neovim and Obsidian. 59 tests green.
 
 - **v7.2** — The API is a built-in feature. **In-app API panel** (arrow icon, top-right corner): shows your base URL + auth headers, a live "Send test" that streams a real `/v1/chat/completions` request, and copy-ready `curl` examples — point any app at this server without reading the docs. **`GET /v1/models`** added for clients that auto-discover models. **Security fix:** the `/v1` OpenAI endpoints were accidentally left open when `AUTH_TOKEN` was set (only `/api` was guarded) — auth is now shared, and `/v1` gets its own rate limiter mounted before the route (the old one was dead code after the route). `/api/status` reports `authRequired`. 54 tests green.
 
