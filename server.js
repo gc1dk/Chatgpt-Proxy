@@ -22,6 +22,7 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN || null;
 const ENCRYPT_KEY = process.env.ENCRYPT_KEY || null;
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== '0';
 const MAX_PROMPT = parseInt(process.env.MAX_PROMPT || '500000', 10);
+const CONTEXT_BUDGET_CHARS = parseInt(process.env.CONTEXT_BUDGET || '320000', 10);
 const HTTPS = process.env.HTTPS === '1';
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || String(PORT + 1), 10);
 const TTS_MAX_CHARS = parseInt(process.env.TTS_MAX_CHARS || '20000', 10);
@@ -264,24 +265,20 @@ function ownedChats(clientId) {
   return store.chats.filter((c) => c.owner === clientId);
 }
 
-function cleanMessages(messages, seed, memoryText) {
+function cleanMessages(messages, seed, memoryText, extraHidden) {
   const out = messages.slice();
+  const hidden = new Set();
   const seedTrim = (seed || '').trim();
-  const memTrim = (memoryText || '').trim();
-  if (seedTrim && out[0] && out[0].role === 'user' && out[0].text.trim() === seedTrim) {
-    out.splice(0, 2);
+  if (seedTrim) hidden.add(seedTrim);
+  if (memoryText) hidden.add(String(memoryText).trim());
+  if (Array.isArray(extraHidden)) {
+    for (const h of extraHidden) if (h) hidden.add(String(h).trim());
   }
-  if (memTrim) {
-    for (let i = 0; i < out.length - 1; i++) {
-      if (
-        out[i].role === 'user' &&
-        out[i].text.trim() === memTrim &&
-        out[i + 1].role === 'assistant' &&
-        out[i + 1].text.trim() === 'OK'
-      ) {
-        out.splice(i, 2);
-        i -= 1;
-      }
+  if (!hidden.size) return out;
+  for (let i = 0; i < out.length - 1; i++) {
+    if (out[i].role === 'user' && hidden.has(out[i].text.trim())) {
+      out.splice(i, 2);
+      i -= 1;
     }
   }
   return out;
@@ -316,6 +313,83 @@ function buildMemoryMessage(messages) {
   lines.push('');
   lines.push('You have remembered the entire history above. Acknowledge with exactly: OK');
   return lines.join('\n');
+}
+
+// ---- unlimited context: rolling-summary auto-compaction ----
+// The saved transcript (chats.json) is the unlimited source of truth; what we
+// feed back to the page is always bounded to CONTEXT_BUDGET_CHARS via a rolling
+// summary of older messages, so a long chat can never overflow the model window.
+function transcriptText(messages) {
+  const MAX_PER_MSG = 20000;
+  let out = '';
+  for (const m of messages) {
+    let t = (m.text || '').slice(0, MAX_PER_MSG);
+    if ((m.text || '').length > MAX_PER_MSG) t += '\n…';
+    out += (m.role === 'user' ? 'User' : 'Assistant') + ': ' + t + '\n\n';
+  }
+  return out.trimEnd();
+}
+
+function buildFeed(chat) {
+  const start = chat.summarizedUpTo || 0;
+  const recent = chat.messages.slice(start);
+  const summaryPart = chat.summary
+    ? `Summary of our earlier conversation (for your memory, do not mention it):\n${chat.summary}\n\n`
+    : '';
+  const recentPart = recent.length ? `Recent conversation:\n${transcriptText(recent)}` : '';
+  return (summaryPart + recentPart).trim();
+}
+
+async function buildAndCompactFeed(chat, driver) {
+  let feed = buildFeed(chat);
+  if (feed.length <= CONTEXT_BUDGET_CHARS) return feed;
+  const start = chat.summarizedUpTo || 0;
+  const recent = chat.messages.slice(start);
+  if (recent.length < 3) {
+    // nothing meaningful to summarize (recent itself is just a few huge messages); hard-truncate
+    feed = feed.slice(feed.length - CONTEXT_BUDGET_CHARS);
+    return '…(earlier context truncated to fit the model)\n' + feed;
+  }
+  const recentBudget = Math.floor(CONTEXT_BUDGET_CHARS * 0.45);
+  let keep = 0;
+  let len = 0;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const tlen = Math.min((recent[i].text || '').length, 20000) + 30;
+    if (len + tlen > recentBudget && keep > 0) break;
+    len += tlen;
+    keep++;
+  }
+  const toSummarize = recent.slice(0, recent.length - keep);
+  if (toSummarize.length) {
+    const summaryInput = transcriptText(toSummarize);
+    const prompt =
+      (chat.summary ? `Here is the existing summary of the conversation so far:\n${chat.summary}\n\n` : '') +
+      'Update the summary with the following conversation. Preserve key facts, decisions, names, important code or commands, and the user\'s goals. Be concise (a few short paragraphs). Reply with only the updated summary.\n\nConversation update:\n' +
+      summaryInput;
+    console.log(`[server] auto-compacting chat ${chat.id}: summarizing ${toSummarize.length} messages (${summaryInput.length} chars)`);
+    try {
+      const result = await driver.submit({ chatId: chat.id, message: prompt, onDelta: null });
+      const newSummary = cleanText((result && result.text) || '').trim();
+      if (newSummary) {
+        chat.summary = newSummary;
+        chat.summarizedUpTo = start + toSummarize.length;
+        if (!Array.isArray(chat.hiddenPrompts)) chat.hiddenPrompts = [];
+        chat.hiddenPrompts.push(prompt);
+        saveStore();
+        console.log(`[server] compacted chat ${chat.id}: summary is now ${newSummary.length} chars`);
+      }
+    } catch (e) {
+      console.error('[server] compaction summary failed:', String((e && e.message) || e));
+    }
+  }
+  // After compaction the page already holds the summary turn, so feed only the recent tail.
+  const tail = chat.messages.slice(chat.summarizedUpTo || 0);
+  let recentFeed = tail.length ? `Recent conversation:\n${transcriptText(tail)}` : '';
+  if (recentFeed.length > CONTEXT_BUDGET_CHARS) {
+    recentFeed = recentFeed.slice(recentFeed.length - CONTEXT_BUDGET_CHARS);
+    recentFeed = '…(earlier context truncated to fit the model)\n' + recentFeed;
+  }
+  return recentFeed || feed.slice(feed.length - CONTEXT_BUDGET_CHARS);
 }
 
 function sse(res, obj) {
@@ -394,10 +468,13 @@ async function pump() {
           try {
             const live = await driver.getHistory(job.chatId);
             if (live.length < chat.messages.length) {
-              const memoryText = buildMemoryMessage(chat.messages);
+              const memoryText = await buildAndCompactFeed(chat, driver);
               chat.lastMemoryText = memoryText;
+              if (!Array.isArray(chat.hiddenPrompts)) chat.hiddenPrompts = [];
+              chat.hiddenPrompts.push(memoryText);
+              chat.hiddenPrompts = chat.hiddenPrompts.slice(-2);
               saveStore();
-              console.log(`[server] feeding full context into chat ${chat.id} (${chat.messages.length} messages)`);
+              console.log(`[server] feeding context into chat ${chat.id} (${chat.messages.length} messages saved, feed ${memoryText.length} chars)`);
               await driver.submit({ chatId: job.chatId, message: memoryText, onDelta: null });
             }
           } catch {}
@@ -408,7 +485,7 @@ async function pump() {
           driver
             .getHistory(job.chatId)
             .then((messages) => {
-              const cleaned = cleanMessages(messages, settings.systemPrompt, c.lastMemoryText);
+              const cleaned = cleanMessages(messages, settings.systemPrompt, c.lastMemoryText, c.hiddenPrompts);
               if (cleaned.length > c.messages.length) {
                 c.messages = cleaned;
                 saveStore();
@@ -423,7 +500,7 @@ async function pump() {
             saveStore();
           }
           let streamedText = '';
-          const result = await Promise.race([
+          let result = await Promise.race([
             driver.submit({
               chatId: job.chatId,
               message: job.message,
@@ -449,6 +526,72 @@ async function pump() {
             }),
             abortedPromise.then(() => null),
           ]);
+          // never-fail guard: one self-healing retry with a fresh, compacted page
+          if (
+            result &&
+            result.error &&
+            !job.aborted &&
+            !job.retried &&
+            (result.error === 'internal' || result.error === 'timeout' || job.message.length + streamedText.length > CONTEXT_BUDGET_CHARS)
+          ) {
+            job.retried = true;
+            console.log(`[server] submit failed (${result.error}), self-healing with a fresh compacted page for chat ${job.chatId}`);
+            try {
+              await driver.closeChat(job.chatId);
+            } catch {}
+            const c0 = getChat(job.chatId);
+            if (c0) c0.seeded = false;
+            const fresh = await driver.ensureChat(job.chatId);
+            job.chatId = fresh.id;
+            const c1 = getChat(job.chatId);
+            if (c1) {
+              if (settings.systemPrompt && !c1.seeded) {
+                try {
+                  await driver.submit({ chatId: job.chatId, message: settings.systemPrompt, onDelta: null });
+                } catch {}
+                c1.seeded = true;
+              }
+              if (c1.messages.length) {
+                const memoryText = await buildAndCompactFeed(c1, driver);
+                c1.lastMemoryText = memoryText;
+                if (!Array.isArray(c1.hiddenPrompts)) c1.hiddenPrompts = [];
+                c1.hiddenPrompts.push(memoryText);
+                c1.hiddenPrompts = c1.hiddenPrompts.slice(-2);
+                saveStore();
+                try {
+                  await driver.submit({ chatId: job.chatId, message: memoryText, onDelta: null });
+                } catch {}
+              }
+            }
+            saveStore();
+            streamedText = '';
+            result = await Promise.race([
+              driver.submit({
+                chatId: job.chatId,
+                message: job.message,
+                onDelta: (d) => {
+                  if (job.aborted) return;
+                  if (job.openai) {
+                    if (d === RESET_MARKER) {
+                      streamedText = '';
+                    } else if (d) {
+                      streamedText += d;
+                      sseOpenAI(job.res, oaiChunk(job.id, d));
+                    }
+                    return;
+                  }
+                  if (d === RESET_MARKER) {
+                    streamedText = '';
+                    sse(job.res, { type: 'reset' });
+                  } else if (d) {
+                    streamedText += d;
+                    sse(job.res, { type: 'delta', text: d });
+                  }
+                },
+              }),
+              abortedPromise.then(() => null),
+            ]);
+          }
           const finalText = cleanText(streamedText.trim() || (result && result.text) || '');
           const c = getChat(job.chatId);
           if (c && finalText) {
@@ -499,7 +642,7 @@ async function pump() {
         if (chat) {
           try {
             const messages = await driver.getHistory(job.chatId);
-            const cleaned = cleanMessages(messages, settings.systemPrompt, chat.lastMemoryText);
+            const cleaned = cleanMessages(messages, settings.systemPrompt, chat.lastMemoryText, chat.hiddenPrompts);
             if (cleaned.length > chat.messages.length) chat.messages = cleaned;
             saveStore();
           } catch {}
@@ -673,7 +816,7 @@ app.get('/api/history', async (req, res) => {
   try {
     const live = await driver.getHistory(chatId);
     if (live.length > chat.messages.length) {
-      chat.messages = cleanMessages(live, settings.systemPrompt, chat.lastMemoryText);
+      chat.messages = cleanMessages(live, settings.systemPrompt, chat.lastMemoryText, chat.hiddenPrompts);
       saveStore();
     }
   } catch {}
@@ -987,8 +1130,11 @@ app.post('/v1/chat/completions', async (req, res) => {
       try {
         const live = await driver.getHistory(chatId);
         if (live.length < c.messages.length) {
-          const memoryText = buildMemoryMessage(c.messages);
+          const memoryText = await buildAndCompactFeed(c, driver);
           c.lastMemoryText = memoryText;
+          if (!Array.isArray(c.hiddenPrompts)) c.hiddenPrompts = [];
+          c.hiddenPrompts.push(memoryText);
+          c.hiddenPrompts = c.hiddenPrompts.slice(-2);
           saveStore();
           await driver.submit({ chatId, message: memoryText, onDelta: null });
         }
@@ -1125,4 +1271,18 @@ async function start() {
   });
 }
 
-start();
+if (require.main === module) {
+  start();
+} else {
+  module.exports = {
+    cleanMessages,
+    buildFeed,
+    buildAndCompactFeed,
+    transcriptText,
+    CONTEXT_BUDGET_CHARS,
+    MAX_PROMPT,
+    settings,
+    getChat,
+    saveStore,
+  };
+}

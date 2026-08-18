@@ -20,6 +20,7 @@ An open-source proxy that gives you a ChatGPT-style chat experience by driving t
 - [Configuration](#configuration)
 - [LAN Access](#lan-access)
 - [API](#api)
+- [Discord Bot](#discord-bot)
 - [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
@@ -46,6 +47,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 
 - **Real ChatGPT** — replies come from the official ChatGPT website's own chat, driven by a headless Chromium (Playwright)
 - **Full conversation context / memory** — every chat keeps its own live browser tab; the model remembers the entire conversation per chat
+- **Unlimited context (Auto)** — the saved transcript is the unlimited source of truth; long chats are auto-compacted: older messages are folded into a rolling summary (a hidden ChatGPT turn) and only the bounded tail is re-fed, so a mega-chat can never overflow the model's context window or fail with "message too long". Configurable via `CONTEXT_BUDGET` (default 320 000 chars)
 - **Cross-restart memory** — when the server restarts, the whole saved transcript is re-fed into the model as hidden context, so resumed chats keep their memory (hidden from the transcript)
 - **Multiple chats** — a sidebar like ChatGPT's: create, switch, and resume chats; each chat has its own independent context
 - **Auto-save** — every chat transcript is saved to `chats.json` after each message (and during long replies), so nothing is lost when the server or `start.bat` is closed
@@ -57,7 +59,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Code tab** — every code block in a reply becomes an artifact (per language, version picker, live preview, run, download, copy) collected in a dedicated Code workspace
 - **Chat export** — download any chat as a Markdown file (`.md`) from the sidebar
 - **Optional auth + accounts** — set `AUTH_TOKEN` to enable login. Users can create accounts in the UI (username + password); chats belong to the account, not the browser, so they follow you across devices. A master-token mode is also available for API clients
-- **Offline test suite** — `npm test` runs 54 automated tests (driver, API, auth, UI) against a mock ChatGPT page, no real ChatGPT account or network access needed
+- **Offline test suite** — `npm test` runs 59 automated tests (driver, API, auth, UI, compaction) against a mock ChatGPT page, no real ChatGPT account or network access needed
 - **Settings** — theme, system prompt, and a "clear cookies / fresh session" button
 - **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
 - **Private per account** — each account (or browser, without login) gets its own chat list and history; no one else on your LAN can see your chats
@@ -69,6 +71,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **In-app updates** — the UI checks GitHub for new releases and can update + restart the server with one click
 - **Voice** — dictation button in the composer (browser SpeechRecognition; needs a secure page, i.e. https or localhost) plus **spoken replies**: assistant answers are read aloud with Microsoft Edge neural voices (Aria — the same voice ChatGPT uses), streamed free from the server with no API keys. Toggle "Speak replies" and pick a voice in Settings, or press Play on any reply
 - **Mobile layout** — sidebar becomes a slide-in drawer on small screens
+- **Discord bot** — a ready-made bot in `discord/` (one editable file, its own `package.json`): `/chat` and `/ask` through the gateway, **voice chat** (speak → it answers out loud, free Vosk STT + Edge TTS), **`/auto-mod`** ChatGPT moderation with a custom per-server policy (warn / delete / timeout), `/verify` code-based role gating, personas, custom system prompt, prefix commands (`!chat`…) — all free, no API keys
 - **MIT licensed**
 
 ---
@@ -88,7 +91,7 @@ There is no company behind this project and no expectation of profit. It is a pe
 3. Each chat owns a tab in the headless Chromium (iPhone user-agent) against the ChatGPT mobile web app. Your message is typed into that chat's real composer and sent.
 4. A `MutationObserver` inside the page watches the assistant's message element and pushes new characters out through `exposeFunction` → streamed to your UI as `delta` events.
 5. Because each chat's tab is never reloaded between messages, the model keeps full context of that conversation.
-6. After every turn (and every ~4 seconds during a long reply) the transcript is saved to `chats.json`, so chats survive server restarts and `start.bat` being closed. If the server restarts, the saved transcript is re-fed into the model as hidden context so resumed chats keep their memory.
+6. After every turn (and every ~4 seconds during a long reply) the transcript is saved to `chats.json`, so chats survive server restarts and `start.bat` being closed. If the server restarts, the saved transcript is re-fed into the model as hidden context so resumed chats keep their memory. Context feeds are always bounded to `CONTEXT_BUDGET`: if a chat's transcript is over budget, the oldest messages are rolled into a summary first (auto-compaction), so no chat can ever overflow the model.
 7. If ChatGPT shows a safety/rate-limit screen, the driver auto-clicks the retry button (up to 3 attempts).
 
 ---
@@ -158,6 +161,7 @@ All options are environment variables:
 | `HTTPS`       | `0`                     | Set to `1` to also serve HTTPS on `PORT + 1` with an auto-generated self-signed certificate (auto-trusted in the Windows user store). Needed for the **mic** (browser speech recognition only works on secure pages) |
 | `HTTPS_PORT`  | `PORT + 1`              | Override the HTTPS port when `HTTPS=1`                 |
 | `MAX_PROMPT`  | `500000`                | Max characters per message — ChatGPT's guest-mode ceiling is the model context (~128k tokens ≈ 500k chars). The web UI and API reject larger messages with a clear error |
+| `CONTEXT_BUDGET` | `320000`             | Max characters fed back into the model when restoring/refreshing a chat's context. Over-budget chats are auto-compacted with a rolling summary (never fails with "message too long") |
 | `TTS_MAX_CHARS` | `20000`               | Max characters that can be spoken in one `/api/tts` call |
 
 **Examples**
@@ -296,6 +300,29 @@ Returns browser status, queue length, captcha/gate state, LAN IPs, and port.
 
 ---
 
+## Discord Bot
+
+The `discord/` folder contains a complete, free Discord bot that uses your gateway as its brain — no OpenAI API keys, ever. Everything is editable: one file (`bot.js`), a plain `config.json`, and `personas.json` for personas.
+
+```bash
+cd discord
+npm install
+# copy config.example.json → config.json, paste your bot token (+ clientId, gatewayUrl, optional masterToken)
+npm start
+```
+
+**What it does:**
+
+- **Text** — `/chat` (persistent per-user conversation on the gateway, unlimited context via auto-compaction), `/ask` (one-shot), `/reset`, `/history`, `/summarize`, `/persona`, `/setprompt <text>`, `/models`, `/ping`, `/about`, `/help`. Prefix commands work too (`!chat`, `!ask`, `!auto-mod on`, …).
+- **Voice** — `/voice join`, then just talk: the bot transcribes you locally (Vosk, free/offline, ~40 MB model auto-downloaded), sends it through the gateway, and **speaks the reply out loud** (Edge TTS). `/voice leave`, `/voice status`, `voice.speakReplies` also reads text replies aloud while you're in VC.
+- **Auto-mod** — `/auto-mod on` makes ChatGPT moderate your channels against a policy you define (`/auto-mod policy <rules>`, `/auto-mod action <warn|delete|timeout>`, per-channel scoping, DM warnings, `reportChannel` logging, role-ignore list). Rate-limited so ChatGPT is never flooded.
+- **Verification** — with `requireVerification: true` users need the `verifiedRoleName` role; `/verify` issues one-time DM codes. `allowedRoles` can restrict the bot to specific roles.
+- **Custom & renameable** — system prompt per user, personas in `personas.json`, bot name via `botName`, all slash commands mirrored as prefix commands.
+
+See `discord/README.md` for full setup, permissions, and troubleshooting (including npm install-scripts notes for `ffmpeg-static`/`@discordjs/opus` on newer npm, and the automatic `opusscript` fallback).
+
+---
+
 ## FAQ
 
 <details>
@@ -324,7 +351,10 @@ No. Independently developed, not affiliated with, endorsed by, or sponsored by O
 <details>
 <summary><strong>Is it unlimited?</strong></summary>
 
-No guarantees. ChatGPT applies its own usage limits (typically per browser session). When a limit is hit, the proxy auto-retries via the site's own retry button and reports the situation to the UI. Your profile in `./profile` keeps the session cookie, so limits reset when the profile/session is refreshed.
+Two different things: **message/context limits** and **usage limits**.
+
+- **Context:** effectively unlimited. The saved transcript is the source of truth, and long chats are auto-compacted — older messages are folded into a rolling summary (a hidden ChatGPT turn) and only a bounded tail is fed back, so a chat can grow forever without overflowing the model window. You can tune the budget with `CONTEXT_BUDGET` (default 320 000 chars).
+- **Usage:** no guarantees. ChatGPT applies its own usage limits (typically per browser session). When a limit is hit, the proxy auto-retries via the site's own retry button and reports the situation to the UI. Your profile in `./profile` keeps the session cookie, so limits reset when the profile/session is refreshed.
 
 </details>
 
@@ -465,6 +495,8 @@ Click **New chat** in the sidebar, or delete `./profile` and restart.
 - [x] Voice input (mic) in the composer
 - [x] Mobile drawer layout
 - [x] At-rest encryption (`ENCRYPT_KEY`) + per-client rate limits
+- [x] Unlimited context (auto-compaction: rolling summaries, `CONTEXT_BUDGET`) + self-healing submit retry
+- [x] Discord bot (`discord/`): chat, voice (Vosk STT + Edge TTS), `/auto-mod`, verification, personas, prefix commands
 - [x] MIT License
 - [ ] More resilient driver during live ChatGPT A/B tests (heuristics already cover composer/submit)
 - [ ] Role-based accounts (admin vs member)
@@ -512,6 +544,8 @@ This project started because I didn't feel like waiting for usage limits to rese
 ## Updates
 
 Recent changes:
+
+- **v7.3** — Never-fail unlimited context + a full Discord bot. **Unlimited context (Auto):** long chats are auto-compacted with rolling summaries — when a restored/refreshed context exceeds `CONTEXT_BUDGET` (default 320 000 chars), the oldest messages are folded into a summary via a hidden ChatGPT turn and only the bounded tail is fed back, so a chat can grow forever without ever hitting "message too long"; hidden prompt turns (seeds, memory feeds, summary prompts) are now stripped from transcripts generically, and a failed submit self-heals once by reopening a fresh compacted page and retrying. **Discord bot (`discord/`):** a complete free bot in one editable file — `/chat` + `/ask` through the gateway, per-user sessions, personas and `/setprompt`, **voice chat** (Vosk local speech-to-text + Edge TTS spoken replies), **`/auto-mod`** (custom per-server policy, warn/delete/timeout, report channel, DM warnings, rate-limited), **`/verify`** one-time-code role gating, prefix commands (`!chat`, `!voice join`, …), renameable via `botName`. Its own `package.json`, `config.example.json`, `personas.json`, and README. 59 tests green.
 
 - **v7.2** — The API is a built-in feature. **In-app API panel** (arrow icon, top-right corner): shows your base URL + auth headers, a live "Send test" that streams a real `/v1/chat/completions` request, and copy-ready `curl` examples — point any app at this server without reading the docs. **`GET /v1/models`** added for clients that auto-discover models. **Security fix:** the `/v1` OpenAI endpoints were accidentally left open when `AUTH_TOKEN` was set (only `/api` was guarded) — auth is now shared, and `/v1` gets its own rate limiter mounted before the route (the old one was dead code after the route). `/api/status` reports `authRequired`. 54 tests green.
 

@@ -1,0 +1,34 @@
+{
+  "token": "PASTE_YOUR_BOT_TOKEN_HERE",
+  "clientId": "PASTE_YOUR_BOT_CLIENT_ID",
+  "guildId": "",
+  "gatewayUrl": "http://localhost:3000/v1",
+  "masterToken": "",
+  "prefix": "!",
+  "botName": "ChatGPT Bot",
+  "systemPrompt": "You are a helpful, natural-sounding assistant. Answer clearly and directly. Use code blocks when code is relevant.",
+  "model": "chatgpt",
+  "allowedRoles": [],
+  "requireVerification": false,
+  "verifiedRoleName": "Verified",
+  "perUserSessions": true,
+  "maxHistoryMessages": 40,
+  "voice": {
+    "enabled": true,
+    "ttsVoice": "en-US-AriaNeural",
+    "modelUrl": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+    "modelDir": "./models/vosk",
+    "speakReplies": true,
+    "channelId": ""
+  },
+  "autoMod": {
+    "enabledByDefault": false,
+    "channels": [],
+    "ignoreRoles": [],
+    "action": "warn",
+    "deleteOnViolation": true,
+    "timeoutMs": 600000,
+    "reportChannel": "",
+    "policy": "No harassment, hate speech, slurs, spam, NSFW content, personal attacks, threats, doxxing, or instructions to do something dangerous or illegal. Be fair and specific."
+  }
+}
