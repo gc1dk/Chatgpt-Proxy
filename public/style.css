@@ -356,6 +356,20 @@ html[data-theme="light"] #icon-moon { display: none; }
   font-size: 1rem;
 }
 
+.user-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.user-imgs img {
+  max-height: 10rem;
+  max-width: 14rem;
+  border-radius: 0.75rem;
+  display: block;
+}
+
 .assistant-avatar {
   width: 1.875rem;
   height: 1.875rem;
@@ -952,8 +966,46 @@ html[data-theme="light"] #icon-moon { display: none; }
 .code-workspace {
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
   animation: panel-in 0.3s ease;
+}
+
+.code-preview-wrap {
+  position: relative;
+  flex: 1.4;
+  min-height: 0;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+
+.code-preview-wrap iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+.code-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.code-editor-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes panel-in {
@@ -970,6 +1022,7 @@ html[data-theme="light"] #icon-moon { display: none; }
 .code-editor-wrap {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1197,6 +1250,53 @@ html[data-theme="light"] #icon-moon { display: none; }
 .composer-wrap {
   flex: 0 0 auto;
   padding: 0.5rem 1rem 0.75rem;
+}
+
+.attach-strip {
+  max-width: 48rem;
+  margin: 0 auto 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.attach-thumb {
+  position: relative;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 0.65rem;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+
+.attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 1.1rem;
+  height: 1.1rem;
+  line-height: 1;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attach-remove:hover {
+  background: rgba(180, 40, 40, 0.9);
 }
 
 .toolbar {

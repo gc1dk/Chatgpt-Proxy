@@ -121,9 +121,9 @@ const buildPrompt = (userId, message) => {
 
 let gatewayInflight = 0;
 const gatewayQueue = [];
-function gatewayChat(sessionKey, prompt, { system = null } = {}) {
+function gatewayChat(sessionKey, prompt, { system = null, images = null } = {}) {
   return new Promise((resolve, reject) => {
-    gatewayQueue.push({ sessionKey, prompt, system, resolve, reject, attempts: 0 });
+    gatewayQueue.push({ sessionKey, prompt, system, images, resolve, reject, attempts: 0 });
     pumpGateway();
   });
 }
@@ -148,10 +148,14 @@ function pumpGateway() {
   if (gatewayInflight >= 2 || !gatewayQueue.length) return;
   gatewayInflight++;
   const job = gatewayQueue.shift();
-  const { sessionKey, prompt, system, resolve, reject } = job;
+  const { sessionKey, prompt, system, images, resolve, reject } = job;
   const u = new URL(GATEWAY + '/chat/completions');
   const mod = u.protocol === 'https:' ? https : http;
-  const messages = system ? [{ role: 'system', content: system }, { role: 'user', content: prompt }] : [{ role: 'user', content: prompt }];
+  const userContent =
+    images && images.length
+      ? [{ type: 'text', text: prompt }, ...images.map((im) => ({ type: 'image_url', image_url: { url: im.dataUrl, name: im.name } }))]
+      : prompt;
+  const messages = system ? [{ role: 'system', content: system }, { role: 'user', content: userContent }] : [{ role: 'user', content: userContent }];
   const body = JSON.stringify({ model: config.model || 'chatgpt', stream: false, user: sessionKey, messages });
   const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
   if (config.masterToken) headers.Authorization = 'Bearer ' + config.masterToken;
@@ -195,6 +199,65 @@ function safeParse(text) {
   } catch {
     return null;
   }
+}
+
+const MAX_BOT_IMAGES = 4;
+const MAX_BOT_IMAGE_BYTES = 6 * 1024 * 1024;
+
+// Download a Discord attachment into { name, mime, dataUrl }. Returns null on
+// non-images, oversized files or download failures.
+function attachmentToImage(att) {
+  return new Promise((resolve) => {
+    if (!att || !att.url) return resolve(null);
+    if (!/^image\//.test(String(att.contentType || ''))) return resolve(null);
+    if (att.size && att.size > MAX_BOT_IMAGE_BYTES) return resolve(null);
+    const mod = /^https:/.test(att.url) ? https : http;
+    mod
+      .get(att.url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return attachmentToImage({ ...att, url: res.headers.location }).then(resolve);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return resolve(null);
+        }
+        const chunks = [];
+        let total = 0;
+        res.on('data', (c) => {
+          total += c.length;
+          if (total > MAX_BOT_IMAGE_BYTES) {
+            res.destroy();
+            return resolve(null);
+          }
+          chunks.push(c);
+        });
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (!buf.length) return resolve(null);
+          const mime = String(res.headers['content-type'] || att.contentType || 'image/png').split(';')[0].toLowerCase();
+          if (!/^image\//.test(mime)) return resolve(null);
+          resolve({ name: att.name || ('image.' + (mime.split('/')[1] || 'png')), mime, dataUrl: 'data:' + mime + ';base64,' + buf.toString('base64') });
+        });
+        res.on('error', () => resolve(null));
+      })
+      .on('error', () => resolve(null))
+      .setTimeout(20000, () => {
+        try { mod.get; } catch {}
+        resolve(null);
+      });
+  });
+}
+
+async function imagesOf(attachments) {
+  if (!attachments) return [];
+  const list = Array.isArray(attachments) ? attachments : Array.from(attachments.values ? attachments.values() : []);
+  const out = [];
+  for (const att of list) {
+    if (out.length >= MAX_BOT_IMAGES) break;
+    const im = await attachmentToImage(att);
+    if (im) out.push(im);
+  }
+  return out;
 }
 
 function gatewayBase() {
@@ -656,14 +719,14 @@ async function speakIfInVoice(guildId, userId, text) {
   if (member) enqueueSpeech(guildId, text);
 }
 
-async function runChat(target, user, message, { stateless = false } = {}) {
+async function runChat(target, user, message, { stateless = false, images = null } = {}) {
   const key = stateless ? 'discord-' + crypto.randomBytes(4).toString('hex') : sessionKeyFor(user.id);
   const prompt = buildPrompt(user.id, String(message || '').slice(0, 20000));
   if (typeof target.deferReply === 'function' && !target.deferred && !target.replied) {
     await target.deferReply({ ephemeral: false }).catch(() => {});
   }
   try {
-    const reply = await gatewayChat(key, prompt);
+    const reply = await gatewayChat(key, prompt, { images });
     const text = reply.trim() || '_empty reply_';
     await replyText(target, text);
     if (!stateless) speakIfInVoice(target.guild && target.guild.id, user.id, text);
@@ -675,8 +738,8 @@ async function runChat(target, user, message, { stateless = false } = {}) {
 // -------------------------------------------------------------- commands ---
 
 const cmdDefs = [
-  new SlashCommandBuilder().setName('ask').setDescription('One-shot question (no conversation memory)').addStringOption((o) => o.setName('prompt').setDescription('Your question').setRequired(true)),
-  new SlashCommandBuilder().setName('chat').setDescription('Chat with the bot (keeps your conversation)').addStringOption((o) => o.setName('message').setDescription('Your message').setRequired(true)),
+  new SlashCommandBuilder().setName('ask').setDescription('One-shot question (no conversation memory)').addStringOption((o) => o.setName('prompt').setDescription('Your question').setRequired(true)).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
+  new SlashCommandBuilder().setName('chat').setDescription('Chat with the bot (keeps your conversation)').addStringOption((o) => o.setName('message').setDescription('Your message').setRequired(true)).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
   new SlashCommandBuilder().setName('reset').setDescription('Forget your conversation and start fresh'),
   new SlashCommandBuilder().setName('history').setDescription('Show the last messages of your conversation').addIntegerOption((o) => o.setName('limit').setDescription('How many messages (default 10)').setMinValue(1).setMaxValue(40)),
   new SlashCommandBuilder().setName('summarize').setDescription('Ask ChatGPT to summarize your conversation so far'),
@@ -773,10 +836,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   try {
     switch (commandName) {
-      case 'ask':
-        return runChat(interaction, user, opts.prompt, { stateless: true });
-      case 'chat':
-        return runChat(interaction, user, opts.message);
+      case 'ask': {
+        const imgs = await imagesOf(opts.image ? [opts.image] : null);
+        return runChat(interaction, user, opts.prompt, { stateless: true, images: imgs });
+      }
+      case 'chat': {
+        const imgs = await imagesOf(opts.image ? [opts.image] : null);
+        return runChat(interaction, user, opts.message, { images: imgs });
+      }
       case 'reset': {
         state.sessions[user.id] = 'discord-' + user.id + '-' + crypto.randomBytes(4).toString('hex');
         saveState();
@@ -985,8 +1052,14 @@ client.on(Events.MessageCreate, async (message) => {
     }
     const opts = {};
     switch (name) {
-      case 'ask': return runChat(fake, message.author, rest, { stateless: true });
-      case 'chat': return runChat(fake, message.author, rest);
+      case 'ask': {
+        const imgs = await imagesOf(message.attachments);
+        return runChat(fake, message.author, rest, { stateless: true, images: imgs });
+      }
+      case 'chat': {
+        const imgs = await imagesOf(message.attachments);
+        return runChat(fake, message.author, rest, { images: imgs });
+      }
       case 'reset': {
         state.sessions[message.author.id] = 'discord-' + message.author.id + '-' + crypto.randomBytes(4).toString('hex');
         saveState();

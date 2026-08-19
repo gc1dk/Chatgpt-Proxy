@@ -23,6 +23,7 @@ const SEL = {
     'form button[type="submit"]',
   ],
   stop: ['[data-composer-submit][data-stop-generating]', 'button[data-testid="stop-button"]', 'button[aria-label*="Stop"]'],
+  file: ['input[type="file"]', 'input[multiple]', 'form input[type="file"]'],
   assistant: ['[data-message-role="assistant"]', '[data-message-author-role="assistant"]'],
   roles: ['[data-message-role]', '[data-message-author-role]'],
   userInner: ['[data-user-message-copy]', '[data-user-message-bubble]'],
@@ -43,6 +44,7 @@ const HEURISTICS = {
   textarea: ['textarea', '[contenteditable="true"]'],
   submit: ['button[type="submit"]', 'button[data-testid="send-button"]', 'button[aria-label*="send" i]'],
   stop: ['button[data-testid="stop-button"]', 'button[aria-label*="stop" i]'],
+  file: ['input[type="file"]'],
   assistant: ['[data-message-author-role="assistant"]', 'article[data-testid*="conversation-turn"] .markdown'],
   roles: ['[data-message-author-role]', 'article[data-testid*="conversation-turn"]'],
   userInner: ['[data-user-message-copy]', '[data-user-message-bubble]', '.whitespace-pre-wrap'],
@@ -253,6 +255,35 @@ class ChatGPTDriver {
     throw new Error('composer did not appear (verification may be blocking)');
   }
 
+  async _waitForAttachments(page) {
+    const start = Date.now();
+    const deadline = start + 45000;
+    while (Date.now() < deadline) {
+      try {
+        const st = await page.evaluate(
+          (fileSels) => {
+            const input = window.__pick(fileSels);
+            const hasFiles = !!(input && input.files && input.files.length);
+            const thumbs = Array.from(
+              document.querySelectorAll(
+                'img[alt*="attachment" i], [data-testid*="attachment" i] img, [data-attachment-card] img'
+              )
+            );
+            const processing = Array.from(document.querySelectorAll('[data-testid*="attachment" i]')).some(
+              (el) => /processing|uploading|uploaded/i.test(el.textContent || '')
+            );
+            return { hasFiles, thumbs: thumbs.length, processing };
+          },
+          this.selOrder.file
+        );
+        if (st.thumbs > 0 && !st.processing) return true;
+        if (!st.hasFiles && Date.now() - start > 8000) return false;
+      } catch {}
+      await sleep(600);
+    }
+    return false;
+  }
+
   async status() {
     if (!this.page) return { ready: false, error: 'not_started' };
     try {
@@ -326,7 +357,7 @@ class ChatGPTDriver {
     }
   }
 
-  async submit({ chatId, message, onDelta = null }) {
+  async submit({ chatId, message, onDelta = null, images = null }) {
     const deadline = Date.now() + this.timeoutMs;
     while (this.busy) {
       if (Date.now() > deadline) throw new Error('browser is busy');
@@ -382,6 +413,26 @@ class ChatGPTDriver {
             Math.round(fillLen / 1024) +
             ' KB). It may be too large for the page — try splitting it.'
         );
+      }
+
+      // Attach images (if any) through the composer's real file input, then wait
+      // for ChatGPT to finish processing them (thumbnails appear) before sending.
+      if (images && images.length) {
+        await page
+          .setInputFiles(
+            this.selOrder.file,
+            images.map((im) => ({
+              name: im.name || 'image.png',
+              mimeType: im.mimeType || 'image/png',
+              buffer: im.buffer,
+            }))
+          )
+          .catch(() => {
+            throw new Error('could not attach the image to the composer');
+          });
+        if (!(await this._waitForAttachments(page))) {
+          throw new Error('image attachment did not finish processing');
+        }
       }
 
       // Wait for the send button to become enabled (React committed the value).

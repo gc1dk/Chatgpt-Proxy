@@ -28,6 +28,63 @@
     loadedChatId: null,
   };
 
+  // ---- image attachments (composer -> /api/chat) ----
+  const pendingImages = [];
+  const MAX_IMAGES = 4;
+  const MAX_IMG_BYTES = 6 * 1024 * 1024;
+
+  function imageDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+  }
+
+  function renderAttachStrip() {
+    const strip = $('#attach-strip');
+    if (!strip) return;
+    strip.hidden = pendingImages.length === 0;
+    strip.innerHTML = '';
+    pendingImages.forEach((im, i) => {
+      const t = document.createElement('div');
+      t.className = 'attach-thumb';
+      t.title = im.name + ' · ' + Math.round(im.dataUrl.length * 0.75 / 1024) + ' KB';
+      const img = document.createElement('img');
+      img.src = im.dataUrl;
+      img.alt = im.name;
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'attach-remove';
+      rm.title = 'Remove image';
+      rm.innerHTML = '&times;';
+      rm.addEventListener('click', () => {
+        pendingImages.splice(i, 1);
+        renderAttachStrip();
+        updateControls();
+      });
+      t.appendChild(img);
+      t.appendChild(rm);
+      strip.appendChild(t);
+    });
+    updateControls();
+  }
+
+  async function addPendingImages(files) {
+    const list = Array.from(files || []);
+    for (const f of list) {
+      if (pendingImages.length >= MAX_IMAGES) break;
+      if (!f || !/^image\//.test(f.type || '')) continue;
+      if (f.size > MAX_IMG_BYTES) continue;
+      try {
+        const dataUrl = await imageDataUrl(f);
+        pendingImages.push({ name: f.name || 'image.png', mime: f.type, dataUrl });
+      } catch (e) {}
+    }
+    renderAttachStrip();
+  }
+
   // ---- voice: spoken replies (server TTS) ----
   let voiceEnabled = false;
   let voiceName = 'en-US-AriaNeural';
@@ -326,6 +383,17 @@
     return CODE_DEFAULT;
   }
 
+  // Sniff the real file type from content when the model tags a block with an
+  // unknown/weird language (e.g. "php-template" for plain HTML).
+  function sniffLang(lang, code) {
+    const c = String(code || '').trim().slice(0, 2000);
+    if (/^<!doctype\s+html|<html[\s>]|<body[\s>]/i.test(c)) return 'html';
+    if (/^<svg[\s>]/i.test(c)) return 'svg';
+    if (/^<style[\s>]/i.test(c)) return 'css';
+    if (/^<script[\s>]/i.test(c)) return 'js';
+    return lang;
+  }
+
   function buildPreviewHtml(lang, code) {
     if (lang === 'html') return code;
     if (lang === 'svg') {
@@ -365,7 +433,9 @@
   function harvestMessage(markdownEl, msgIndex) {
     let pushed = false;
     markdownEl.querySelectorAll('.code-block').forEach((b, i) => {
-      const lang = b._langId;
+      let lang = b._langId;
+      if (!CODE_LANGS[lang]) lang = sniffLang(lang, b._rawCode);
+      if (!CODE_LANGS[lang]) lang = 'txt';
       const kind = previewableLang(lang) ? 'code' : (lang === 'md' || lang === 'markdown') ? 'doc' : 'code';
       const info = CODE_LANGS[lang] || CODE_DEFAULT;
       addArtifact({ msgIndex, n: i, kind, lang, title: info.filename, content: b._rawCode });
@@ -404,6 +474,26 @@
     $('#code-tab-badge').textContent = String(artifacts.length);
   }
 
+  let previewBlobUrl = null;
+  function updatePreview(art) {
+    const iframe = $('#code-preview');
+    const empty = $('#code-preview-empty');
+    if (!iframe) return;
+    if (previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      previewBlobUrl = null;
+    }
+    if (!art || !previewableLang(art.lang)) {
+      iframe.removeAttribute('src');
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    const html = buildPreviewHtml(art.lang, art.content);
+    previewBlobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+    iframe.src = previewBlobUrl;
+  }
+
   function loadArtifact(art) {
     const chip = $('#code-file-chip');
     const fn = $('#code-filename');
@@ -413,6 +503,7 @@
       chip.hidden = true;
       fn.textContent = '';
       autoLatest = true;
+      updatePreview(null);
       return;
     }
     activeArtifactId = art.id;
@@ -420,6 +511,8 @@
     $('#code-kind').textContent = art.kind === 'code' ? (art.lang || 'code').toUpperCase() : 'MARKDOWN';
     chip.hidden = false;
     fn.textContent = art.title;
+    if (chip) chip.classList.remove('edited');
+    updatePreview(art);
   }
 
   function switchTab(which) {
@@ -487,7 +580,15 @@
       const run = document.createElement('button');
       run.className = 'code-btn';
       run.textContent = 'Run';
-      run.addEventListener('click', () => openInNewTab(buildPreviewHtml(langId, rawCode) || rawCode, !!(CODE_LANGS[langId] || {}).preview));
+      run.addEventListener('click', () => {
+        const art = artifacts.find((a) => a.id === wrap.dataset.artId);
+        if (art) {
+          loadArtifact(art);
+          switchTab('code');
+          return;
+        }
+        openInNewTab(buildPreviewHtml(langId, rawCode) || rawCode, !!(CODE_LANGS[langId] || {}).preview);
+      });
       actions.appendChild(run);
       const dl = document.createElement('button');
       dl.className = 'code-btn';
@@ -522,12 +623,27 @@
     }
   }
 
-  function addUserMessage(text) {
+  function addUserMessage(text, images) {
     const msg = document.createElement('div');
     msg.className = 'msg user';
     const bubble = document.createElement('div');
     bubble.className = 'user-bubble';
-    bubble.textContent = text;
+    if (images && images.length) {
+      const row = document.createElement('div');
+      row.className = 'user-imgs';
+      for (const im of images) {
+        const img = document.createElement('img');
+        img.src = im.dataUrl || im.src;
+        img.alt = im.name || 'image';
+        row.appendChild(img);
+      }
+      bubble.appendChild(row);
+    }
+    if (text) {
+      const p = document.createElement('div');
+      p.textContent = text;
+      bubble.appendChild(p);
+    }
     msg.appendChild(bubble);
     messagesEl.appendChild(msg);
     scrollToBottom(true);
@@ -546,7 +662,7 @@
     body.className = 'assistant-body';
     const name = document.createElement('div');
     name.className = 'assistant-name';
-    name.innerHTML = '<span>ChatGPT</span><span class="gpt-badge">GPT-4</span>';
+    name.innerHTML = '<span>ChatGPT</span><span class="gpt-badge">GPT-5.6 Luna</span>';
     const markdown = document.createElement('div');
     markdown.className = 'markdown';
     body.appendChild(name);
@@ -713,11 +829,13 @@
   async function sendMessage(text) {
     if (state.busy) return;
     state.busy = true;
+    const imgs = pendingImages.splice(0, MAX_IMAGES);
+    renderAttachStrip();
     state.lastPrompt = text;
     updateControls();
     stopSpeech();
     welcome.hidden = true;
-    addUserMessage(text);
+    addUserMessage(text, imgs);
     const bubble = makeStreamingBubble();
     if (serverMaxPrompt && text.length > serverMaxPrompt) {
       bubble.error({
@@ -770,7 +888,7 @@
       const res = await api('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, chatId: state.currentChatId }),
+        body: JSON.stringify({ message: text, chatId: state.currentChatId, images: imgs }),
       });
       if (!res.ok || !res.body) {
         let errText = 'Bad response from server (' + res.status + ')';
@@ -858,9 +976,11 @@
   }
 
   function updateControls() {
-    sendBtn.disabled = state.busy || !input.value.trim();
+    sendBtn.disabled = state.busy || (!input.value.trim() && pendingImages.length === 0);
     $('#new-chat').disabled = state.busy;
     input.disabled = state.busy;
+    const attach = $('#attach');
+    if (attach) attach.disabled = state.busy;
   }
 
   function autoGrow() {
@@ -870,6 +990,14 @@
 
   function clearMessages() {
     messagesEl.querySelectorAll('.msg').forEach((m) => m.remove());
+    const iframe = $('#code-preview');
+    if (iframe) iframe.removeAttribute('src');
+    if (previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      previewBlobUrl = null;
+    }
+    const empty = $('#code-preview-empty');
+    if (empty) empty.hidden = false;
   }
 
   function renderChatList(chats, activeChatId) {
@@ -962,7 +1090,7 @@
       const h = await api('/api/history?chatId=' + encodeURIComponent(chatId)).then((r) => r.json());
       if (h.messages && h.messages.length) {
         for (const m of h.messages) {
-          if (m.role === 'user') addUserMessage(m.text);
+          if (m.role === 'user') addUserMessage(m.text, m.images);
           else if (m.role === 'assistant') {
             const { msg, markdown, msgIndex } = addAssistantMessage();
             if (m.text.trim()) markdown.replaceChildren(renderMarkdown(m.text));
@@ -999,7 +1127,7 @@
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
-      if (!state.busy && input.value.trim()) {
+      if (!state.busy && (input.value.trim() || pendingImages.length)) {
         const text = input.value.trim();
         input.value = '';
         autoGrow();
@@ -1011,7 +1139,7 @@
 
   composer.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!state.busy && input.value.trim()) {
+    if (!state.busy && (input.value.trim() || pendingImages.length)) {
       const text = input.value.trim();
       input.value = '';
       autoGrow();
@@ -1019,6 +1147,43 @@
       sendMessage(text);
     }
   });
+
+  // ---- image attachments: button, paste, drag & drop ----
+  const attachInput = $('#attach-input');
+  const attachBtn = $('#attach');
+  if (attachInput && attachBtn) {
+    attachBtn.addEventListener('click', () => attachInput.click());
+    attachInput.addEventListener('change', () => {
+      addPendingImages(attachInput.files);
+      attachInput.value = '';
+    });
+  }
+  input.addEventListener('paste', (e) => {
+    if (!e.clipboardData) return;
+    const files = [];
+    for (const item of e.clipboardData.items) {
+      if (item.kind === 'file' && /^image\//.test(item.type || '')) {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) addPendingImages(files);
+  });
+  const dropZone = composer.closest('.composer-wrap');
+  if (dropZone) {
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (state.busy) return;
+      const files = [];
+      for (const f of e.dataTransfer.files || []) {
+        if (/^image\//.test(f.type || '')) files.push(f);
+      }
+      if (files.length) addPendingImages(files);
+    });
+  }
 
   $('#new-chat').addEventListener('click', async () => {
     if (state.busy) return;
@@ -1031,6 +1196,8 @@
         }
         state.currentChatId = r.id;
         clearMessages();
+        pendingImages.length = 0;
+        renderAttachStrip();
         welcome.hidden = false;
         refreshChatList();
         input.focus();
@@ -1248,6 +1415,13 @@
 
   $('#code-run').addEventListener('click', () => {
     const art = artifacts.find((a) => a.id === activeArtifactId);
+    if (art && previewableLang(art.lang)) {
+      updatePreview(art);
+      const btn = $('#code-run');
+      btn.classList.add('run-flash');
+      setTimeout(() => btn.classList.remove('run-flash'), 600);
+      return;
+    }
     const lang = art ? art.lang : null;
     const content = $('#code-editor').value;
     const html = lang && previewableLang(lang) ? buildPreviewHtml(lang, content) : null;
@@ -1288,6 +1462,19 @@
 
   $('#code-editor').addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('#code-run').click();
+  });
+
+  let codeEditTimer = null;
+  $('#code-editor').addEventListener('input', () => {
+    const art = artifacts.find((a) => a.id === activeArtifactId);
+    if (!art) return;
+    art.content = $('#code-editor').value;
+    const chip = $('#code-file-chip');
+    if (chip) chip.classList.add('edited');
+    clearTimeout(codeEditTimer);
+    codeEditTimer = setTimeout(() => {
+      if (previewableLang(art.lang)) updatePreview(art);
+    }, 700);
   });
 
   $('#settings-theme').addEventListener('click', () => {
@@ -1344,7 +1531,10 @@
         boot(92, 'Connecting…');
       }
       if (s.lanIps && s.lanIps.length) {
-        if (s.https && s.httpsPort) {
+        if (isPublicHost()) {
+          $('#lan-url').hidden = true;
+          $('#settings-server-info').textContent = location.host + ' · ' + s.chatCount + ' chat(s)';
+        } else if (s.https && s.httpsPort) {
           $('#lan-url').textContent = 'LAN: https://' + s.lanIps[0] + ':' + s.httpsPort + ' (voice)';
           $('#settings-server-info').textContent =
             'https://' + s.lanIps[0] + ':' + s.httpsPort + ' · ' + s.chatCount + ' chat(s)';
@@ -1563,13 +1753,16 @@
     });
   }
 
+  const isPublicHost = () => location.hostname.endsWith('.pages.dev');
+
   async function init() {
     boot(4, 'Starting…');
     try {
       const t = localStorage.getItem('cgpt-theme');
       if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
     } catch (e) {}
-    if (location.hostname.endsWith('.pages.dev')) {
+    if (isPublicHost()) {
+      $('#lan-url').hidden = true;
       const db = $('#demo-banner');
       if (db) db.hidden = false;
       const ws = $('#welcome-sub');

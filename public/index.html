@@ -98,8 +98,13 @@
             <span class="queue-info" id="queue-info"></span>
             <span class="rate-status" id="rate-status" hidden></span>
           </div>
+          <div class="attach-strip" id="attach-strip" hidden></div>
           <form class="composer" id="composer">
-            <textarea id="input" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+            <button type="button" class="send-btn mic-btn" id="attach" aria-label="Attach images" title="Attach images (max 4, 6 MB each)">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9.75 2.25a1.75 1.75 0 0 0-1.75 1.75v9.5a4 4 0 0 0 8 0v-8a.75.75 0 0 1 1.5 0v8a5.5 5.5 0 0 1-11 0V4a3.25 3.25 0 0 1 6.5 0v9.5a1.75 1.75 0 1 1-3.5 0V4a.75.75 0 0 1 1.5 0v9.5a.25.25 0 1 0 .5 0V4a1.75 1.75 0 0 0-1.75-1.75Z"/></svg>
+            </button>
+            <input type="file" id="attach-input" accept="image/*" multiple hidden>
+            <textarea id="input" rows="1" placeholder="Ask anything (paste or drop images too)" autocomplete="off"></textarea>
             <button type="button" class="send-btn mic-btn" id="mic" aria-label="Voice input" title="Voice input" hidden>
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3ZM4.75 9.75a.75.75 0 0 1 1.5 0 3.75 3.75 0 0 0 7.5 0 .75.75 0 0 1 1.5 0 5.25 5.25 0 0 1-4.5 5.21v1.79h2.25a.75.75 0 0 1 0 1.5H7a.75.75 0 0 1 0-1.5h2.25v-1.79a5.25 5.25 0 0 1-4.5-5.21Z"/></svg>
             </button>
@@ -120,7 +125,7 @@
           </div>
           <div class="code-toolbar-actions">
             <span class="auto-badge" id="auto-badge" hidden title="Auto-syncs to the latest code from the chat"><span class="auto-dot"></span>Auto</span>
-            <button id="code-run" class="code-btn" title="Run in a new tab">
+            <button id="code-run" class="code-btn" title="Restart the live preview">
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2a1 1 0 0 1 1.52-.85l9 5.3a1 1 0 0 1 0 1.7l-9 5.3a1 1 0 0 1-1.52-.85V4.2Z"/></svg>
               <span>Run</span>
             </button>
@@ -139,8 +144,12 @@
           </div>
         </div>
         <div class="code-workspace">
+          <div class="code-preview-wrap" id="code-preview-wrap">
+            <iframe id="code-preview" sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups" title="Live preview"></iframe>
+            <div class="code-preview-empty" id="code-preview-empty">No live preview — this file type isn't runnable. Edit it below, or use Open to view it in a new tab.</div>
+          </div>
           <div class="code-editor-wrap">
-            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code or document from the chat shows up here automatically. Use Run or Open to view it in a new tab. Use the Versions menu to jump to an earlier one."></textarea>
+            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code from the chat shows up here — runnable files play live in the preview above. Edit to update the preview, or use the Versions menu to jump to an earlier one."></textarea>
           </div>
         </div>
       </section>

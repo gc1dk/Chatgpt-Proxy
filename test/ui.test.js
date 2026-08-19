@@ -131,13 +131,15 @@ test('boot overlay hides once ready', async () => {
   assert.ok(true, 'boot overlay should hide after the app connects');
 });
 
-test('code tab shows editor (preview pane removed)', async () => {
+test('code tab shows live preview + editor', async () => {
   await page.locator('#tab-code').click();
   await page.waitForTimeout(400);
   const editor = await page.locator('#code-editor').isVisible();
   const preview = await page.locator('.code-preview-wrap').count();
+  const empty = await page.locator('#code-preview-empty').isVisible();
   assert.ok(editor, 'code editor should be visible');
-  assert.equal(preview, 0, 'preview wrap should be removed');
+  assert.equal(preview, 1, 'preview wrap should exist');
+  assert.ok(empty, 'empty-preview hint should show when no artifact is loaded');
 });
 
 test('settings modal opens and closes', async () => {

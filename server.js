@@ -24,6 +24,70 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN || null;
 const ENCRYPT_KEY = process.env.ENCRYPT_KEY || null;
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== '0';
 const MAX_PROMPT = parseInt(process.env.MAX_PROMPT || '500000', 10);
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+// Validate an image list of { name?, mime?, dataUrl? } into { name, mime, dataUrl } entries.
+function parseImages(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const it of list) {
+    if (out.length >= MAX_IMAGES) break;
+    if (!it || typeof it !== 'object') continue;
+    const url = String(it.dataUrl || it.url || '').trim();
+    const m = url.match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i);
+    if (!m) continue;
+    const raw = m[2].replace(/\s/g, '');
+    if (!raw.length || Math.ceil((raw.length * 3) / 4) > MAX_IMAGE_BYTES) continue;
+    out.push({
+      name: String(it.name || ('image.' + (m[1].split('/')[1] || 'png'))).slice(0, 120),
+      mime: m[1].toLowerCase(),
+      dataUrl: 'data:' + m[1].toLowerCase() + ';base64,' + raw,
+    });
+  }
+  return out;
+}
+
+async function parseOpenAIUserMessage(content) {
+  if (typeof content === 'string') return { text: String(content).trim(), images: [] };
+  if (!Array.isArray(content)) return { text: '', images: [] };
+  let text = '';
+  const images = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    if (part.type === 'text' && typeof part.text === 'string') text += part.text;
+    else if (part.type === 'image_url' && part.image_url) {
+      const url = String(part.image_url.url || '').trim();
+      if (/^data:image\//i.test(url)) {
+        images.push(...parseImages([{ dataUrl: url, name: part.image_url.name || null }]));
+      } else if (/^https?:\/\//i.test(url) && images.length < MAX_IMAGES) {
+        try {
+          const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
+          if (r.ok) {
+            const buf = Buffer.from(await r.arrayBuffer());
+            if (buf.length && buf.length <= MAX_IMAGE_BYTES) {
+              const mime = (r.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+              if (/^image\//.test(mime)) {
+                images.push({ name: part.image_url.name || 'image.' + (mime.split('/')[1] || 'png'), mime, dataUrl: 'data:' + mime + ';base64,' + buf.toString('base64') });
+              }
+            }
+          }
+        } catch {}
+      }
+      if (images.length >= MAX_IMAGES) break;
+    }
+  }
+  return { text: text.trim(), images };
+}
+
+function imageBuffers(images) {
+  return (images || []).map((im) => ({
+    name: im.name,
+    mimeType: im.mime,
+    buffer: Buffer.from(im.dataUrl.split(',')[1], 'base64'),
+  }));
+}
+
 const CONTEXT_BUDGET_CHARS = parseInt(process.env.CONTEXT_BUDGET || '320000', 10);
 const HTTPS = process.env.HTTPS === '1';
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT || String(PORT + 1), 10);
@@ -64,8 +128,8 @@ function readJson(file, fallback) {
 }
 
 const app = express();
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ limit: '20mb', extended: true }));
+app.use(express.json({ limit: '48mb' }));
+app.use(express.urlencoded({ limit: '48mb', extended: true }));
 
 // ---- auth: master Bearer token, or per-client token (issued via /api/register) ----
 const clients = readJson(CLIENTS_FILE, {});
@@ -448,7 +512,7 @@ async function submitWithArmor(job, driver, abortedPromise, onDelta) {
   for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
     if (job.aborted) return null;
     result = await Promise.race([
-      driver.submit({ chatId: job.chatId, message: job.message, onDelta }),
+      driver.submit({ chatId: job.chatId, message: job.message, images: imageBuffers(job.images), onDelta }),
       abortedPromise.then(() => null),
     ]);
     if (!result || result.error !== 'rate_limited' || job.aborted || attempt >= RATE_LIMIT_RETRIES) break;
@@ -550,7 +614,9 @@ async function pump() {
         try {
           const chat = getChat(job.chatId);
           if (chat) {
-            chat.messages.push({ role: 'user', text: job.message });
+            const userMsg = { role: 'user', text: job.message };
+            if (job.images && job.images.length) userMsg.images = job.images;
+            chat.messages.push(userMsg);
             saveStore();
           }
           let streamedText = '';
@@ -617,6 +683,7 @@ async function pump() {
               driver.submit({
                 chatId: job.chatId,
                 message: job.message,
+                images: imageBuffers(job.images),
                 onDelta: onDeltaFor,
               }),
               abortedPromise.then(() => null),
@@ -684,7 +751,7 @@ async function pump() {
   }
 }
 
-function startChatStream(req, res, chatId, message) {
+function startChatStream(req, res, chatId, message, images) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -693,7 +760,7 @@ function startChatStream(req, res, chatId, message) {
   });
   res.flushHeaders && res.flushHeaders();
   sse(res, { type: 'chat', id: chatId });
-  const job = { id: ++jobSeq, chatId, message, res, aborted: false, clientId: clientIdOf(req) };
+  const job = { id: ++jobSeq, chatId, message, images: images || [], res, aborted: false, clientId: clientIdOf(req) };
   req.on('aborted', () => {
     job.aborted = true;
   });
@@ -726,7 +793,8 @@ app.post('/api/register', (req, res) => {
 
 app.post('/api/chat', (req, res) => {
   const message = String((req.body && req.body.message) || '').trim();
-  if (!message) {
+  const images = parseImages(req.body && req.body.images);
+  if (!message && !images.length) {
     res.status(400).json({ error: 'message is required' });
     return;
   }
@@ -758,7 +826,7 @@ app.post('/api/chat', (req, res) => {
   if (!chat.title || chat.title === 'New chat') chat.title = message.slice(0, 40);
   store.activeChatId = chatId;
   saveStore();
-  startChatStream(req, res, chatId, message);
+  startChatStream(req, res, chatId, message, images);
 });
 
 app.post('/api/new-chat', async (req, res) => {
@@ -1115,8 +1183,10 @@ app.post('/v1/chat/completions', async (req, res) => {
   const clientId = clientIdOf(req);
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const lastUser = [...messages].reverse().find((m) => m && (m.role === 'user' || m.role === 'assistant'));
-  const prompt = String((lastUser && lastUser.content) || '').trim();
-  if (!prompt) {
+  const parsed = await parseOpenAIUserMessage(lastUser ? lastUser.content : '');
+  const prompt = parsed.text;
+  const images = parsed.images;
+  if (!prompt && !images.length) {
     res.status(400).json({ error: { message: 'a user message is required', type: 'invalid_request_error' } });
     return;
   }
@@ -1163,7 +1233,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         'X-Accel-Buffering': 'no',
       });
       res.flushHeaders && res.flushHeaders();
-      const job = { id: ++jobSeq, chatId, message: prompt, res, aborted: false, clientId, openai: true };
+      const job = { id: ++jobSeq, chatId, message: prompt, images: images || [], res, aborted: false, clientId, openai: true };
       req.on('aborted', () => {
         job.aborted = true;
       });
@@ -1190,9 +1260,11 @@ app.post('/v1/chat/completions', async (req, res) => {
         }
       } catch {}
     }
-    c.messages.push({ role: 'user', text: prompt });
+    const userMsg = { role: 'user', text: prompt };
+    if (images.length) userMsg.images = images;
+    c.messages.push(userMsg);
     saveStore();
-    const armorJob = { chatId, message: prompt, res, openai: true, aborted: false };
+    const armorJob = { chatId, message: prompt, images: images || [], res, openai: true, aborted: false };
     const result = await submitWithArmor(armorJob, driver, new Promise(() => {}), null);
     const finalText = cleanText((result && result.text) || '');
     const cc = getChat(chatId);

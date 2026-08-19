@@ -57,12 +57,13 @@ There is no company behind this project and no expectation of profit. It is a pe
 - **Web search** — use ChatGPT's own built-in web search toggle in the chat (no custom reimplementation)
 - **Markdown + syntax highlighting** — responses render markdown, code blocks, copy buttons, and a download button per reply
 - **ChatGPT-style interface** — clean 1:1 UI: logo, sidebar, theme toggle, settings, streaming bubbles; no ads, no paid features
-- **Code tab** — every code block in a reply becomes an artifact (per language, version picker, live preview, run, download, copy) collected in a dedicated Code workspace
+- **Code tab** — every code block in a reply becomes an artifact (per language, version picker, live preview, run, download, copy) collected in a dedicated Code workspace. Runnable files (HTML/SVG/CSS/JS) **play live in the preview pane** — edit the code and the preview updates in real time; "Run" on any chat code block drops you straight into the running game
+- **Image support** — attach images with the paperclip button, paste from the clipboard, or drag & drop (up to 4, 6 MB each). Images ride along to real ChatGPT (vision) via the browser session and are stored with the transcript, so they persist across restarts and appear in history/export. The OpenAI-compatible API accepts `image_url` parts (data URLs or http(s)) too — the Discord bot's `/chat` and `/ask` accept an optional image attachment
 - **Chat export** — download any chat as a Markdown file (`.md`) from the sidebar
 - **Optional auth + accounts** — set `AUTH_TOKEN` to enable login. Users can create accounts in the UI (username + password); chats belong to the account, not the browser, so they follow you across devices. A master-token mode is also available for API clients
 - **Offline test suite** — `npm test` runs 59 automated tests (driver, API, auth, UI, compaction) against a mock ChatGPT page, no real ChatGPT account or network access needed
 - **Settings** — theme, system prompt, and a "clear cookies / fresh session" button
-- **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project
+- **Model disclaimer** — the UI states clearly that the AI models belong to OpenAI and are not owned or modified by this project. The badge next to ChatGPT's name reads **GPT-5.6 Luna** — the model name ChatGPT itself reports in guest mode; the gateway just mirrors it
 - **Private per account** — each account (or browser, without login) gets its own chat list and history; no one else on your LAN can see your chats
 - **Request queue** — messages are processed one at a time; clients wait their turn (per-client depth cap when auth is on)
 - **Stop generation** — cancel the current response, or your queued one (each user can only cancel their own; master can cancel anything)
@@ -324,7 +325,7 @@ npm start
 
 **What it does:**
 
-- **Text** — `/chat` (persistent per-user conversation on the gateway, unlimited context via auto-compaction), `/ask` (one-shot), `/reset`, `/history`, `/summarize`, `/persona`, `/setprompt <text>`, `/models`, `/ping`, `/about`, `/help`. Prefix commands work too (`!chat`, `!ask`, `!auto-mod on`, …).
+- **Text** — `/chat` (persistent per-user conversation on the gateway, unlimited context via auto-compaction), `/ask` (one-shot), `/reset`, `/history`, `/summarize`, `/persona`, `/setprompt <text>`, `/models`, `/ping`, `/about`, `/help`. Prefix commands work too (`!chat`, `!ask`, `!auto-mod on`, …). `/chat` and `/ask` accept an **image attachment** (up to 4) — images are forwarded to ChatGPT's vision through the gateway.
 - **Export** — `/export` downloads your conversation as a Markdown file (`/export json` for JSON). **Status** — `/status` shows gateway health, latency and served models. **Source** — `/source` links to the GitHub repo. **Rate-limit armor** — if free-tier ChatGPT is rate-limited, the bot retries with backoff (3 tries) instead of failing.
 - **Voice** — `/voice join`, then just talk: the bot transcribes you locally (Vosk, free/offline, ~40 MB model auto-downloaded), sends it through the gateway, and **speaks the reply out loud** (Edge TTS). `/voice leave`, `/voice status`, `voice.speakReplies` also reads text replies aloud while you're in VC.
 - **Auto-mod** — `/auto-mod on` makes ChatGPT moderate your channels against a policy you define (`/auto-mod policy <rules>`, `/auto-mod action <warn|delete|timeout>`, per-channel scoping, DM warnings, `reportChannel` logging, role-ignore list). Rate-limited so ChatGPT is never flooded.

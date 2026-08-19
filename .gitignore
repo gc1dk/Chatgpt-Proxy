@@ -13,3 +13,5 @@ selectors.json
 
 pages-deploy/
 
+
+.wrangler/
