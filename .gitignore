@@ -10,3 +10,6 @@ web.env
 users.json
 clients.json
 selectors.json
+
+pages-deploy/
+

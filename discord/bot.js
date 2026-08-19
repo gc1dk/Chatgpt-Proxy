@@ -3,6 +3,7 @@
 //
 // Features
 //   • /ask, /chat, /reset, /history, /summarize, /persona, /setprompt, /models, /ping, /about, /help
+//   • /export — download your conversation (.md or .json), /status — gateway health, /source — the code
 //   • Voice: join a voice channel and talk — speech-to-text (local Vosk) → ChatGPT → replies out loud (Edge TTS)
 //   • /auto-mod: ChatGPT moderates your server channels (warn / delete / timeout) with a custom policy
 //   • /verify: custom one-time-code verification, gates the bot behind a role if you want
@@ -122,14 +123,32 @@ let gatewayInflight = 0;
 const gatewayQueue = [];
 function gatewayChat(sessionKey, prompt, { system = null } = {}) {
   return new Promise((resolve, reject) => {
-    gatewayQueue.push({ sessionKey, prompt, system, resolve, reject });
+    gatewayQueue.push({ sessionKey, prompt, system, resolve, reject, attempts: 0 });
     pumpGateway();
   });
+}
+function retryLimited(job, reject) {
+  const attempts = (job.attempts || 0) + 1;
+  if (attempts <= 3) {
+    job.attempts = attempts;
+    const delay = 15000 * attempts;
+    console.log(`[bot] rate limited — retry ${attempts}/3 in ${Math.round(delay / 1000)}s`);
+    setTimeout(() => {
+      gatewayQueue.push(job);
+      gatewayInflight--;
+      pumpGateway();
+    }, delay);
+    return;
+  }
+  gatewayInflight--;
+  reject(new Error('ChatGPT is rate-limited right now. Try again in a few minutes.'));
+  pumpGateway();
 }
 function pumpGateway() {
   if (gatewayInflight >= 2 || !gatewayQueue.length) return;
   gatewayInflight++;
-  const { sessionKey, prompt, system, resolve, reject } = gatewayQueue.shift();
+  const job = gatewayQueue.shift();
+  const { sessionKey, prompt, system, resolve, reject } = job;
   const u = new URL(GATEWAY + '/chat/completions');
   const mod = u.protocol === 'https:' ? https : http;
   const messages = system ? [{ role: 'system', content: system }, { role: 'user', content: prompt }] : [{ role: 'user', content: prompt }];
@@ -140,6 +159,10 @@ function pumpGateway() {
     let buf = '';
     res.on('data', (c) => (buf += c));
     res.on('end', () => {
+      if (res.statusCode === 429 || /rate_limited|rate limit/i.test(buf)) {
+        retryLimited(job, reject);
+        return;
+      }
       gatewayInflight--;
       try {
         const j = JSON.parse(buf);
@@ -164,6 +187,36 @@ function pumpGateway() {
   req.setTimeout(120000, () => req.destroy(new Error('gateway timeout')));
   req.write(body);
   req.end();
+}
+
+function safeParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function gatewayBase() {
+  return GATEWAY.replace(/\/+$/, '').replace(/\/v1$/, '');
+}
+function chatIdFor(sessionKey) {
+  return 'api-' + crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0, 24);
+}
+function gatewayGet(pathname, { timeout = 20000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(pathname, gatewayBase());
+    const mod = u.protocol === 'https:' ? https : http;
+    const headers = {};
+    if (config.masterToken) headers.Authorization = 'Bearer ' + config.masterToken;
+    const req = mod.get(u, { headers }, (res) => {
+      let buf = '';
+      res.on('data', (c) => (buf += c));
+      res.on('end', () => resolve({ status: res.statusCode, body: buf }));
+    });
+    req.on('error', reject);
+    req.setTimeout(timeout, () => req.destroy(new Error('gateway timeout')));
+  });
 }
 
 // ------------------------------------------------------------ verification --
@@ -631,6 +684,9 @@ const cmdDefs = [
   new SlashCommandBuilder().setName('setprompt').setDescription('Set a custom system prompt for yourself (use "clear" to reset)').addStringOption((o) => o.setName('text').setDescription('The system prompt, or "clear"')),
   new SlashCommandBuilder().setName('models').setDescription('List models served by the gateway'),
   new SlashCommandBuilder().setName('ping').setDescription('Check latency'),
+  new SlashCommandBuilder().setName('export').setDescription('Download your conversation as a Markdown file').addStringOption((o) => o.setName('format').setDescription('md (default) or json').addChoices({ name: 'Markdown', value: 'md' }, { name: 'JSON', value: 'json' })),
+  new SlashCommandBuilder().setName('status').setDescription('Gateway health, latency and queue'),
+  new SlashCommandBuilder().setName('source').setDescription('Get the source code on GitHub'),
   new SlashCommandBuilder().setName('verify').setDescription('Verify yourself to unlock the bot').addStringOption((o) => o.setName('code').setDescription('The code you received in DM')),
   new SlashCommandBuilder().setName('voice').setDescription('Voice chat controls').addStringOption((o) => o.setName('action').setDescription('join / leave / status').setRequired(true)),
   new SlashCommandBuilder().setName('auto-mod').setDescription('Toggle ChatGPT auto-moderation for this server').addStringOption((o) => o.setName('mode').setDescription('on / off / status / all channels').setRequired(true).addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }, { name: 'status', value: 'status' }, { name: 'all channels', value: 'all' })).addStringOption((o) => o.setName('policy').setDescription('Set a custom moderation policy (or "keep")')).addStringOption((o) => o.setName('action').setDescription('Default action: warn / delete / timeout')).addChannelOption((o) => o.setName('channel').setDescription('Only moderate this channel')),
@@ -786,6 +842,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await gatewayChat('ping-' + user.id, 'Reply with the single word: pong');
         return interaction.reply({ content: `Pong — gateway round-trip **${Date.now() - t0} ms**.` });
       }
+      case 'export': {
+        const format = opts.format === 'json' ? 'json' : 'md';
+        const chatId = chatIdFor(sessionKeyFor(user.id));
+        const { status, body } = await gatewayGet('/api/export?chatId=' + encodeURIComponent(chatId) + '&format=' + format);
+        if (status !== 200) {
+          const j = safeParse(body);
+          return interaction.reply({ content: 'Could not export — ' + ((j && j.error) || ('gateway returned ' + status)) + '. Chat with me first (/chat).', ephemeral: true });
+        }
+        return interaction.reply({ content: 'Here is your conversation:', files: [{ attachment: Buffer.from(body), name: 'conversation.' + format }] });
+      }
+      case 'status': {
+        const t0 = Date.now();
+        const { status, body } = await gatewayGet('/v1/models');
+        const latency = Date.now() - t0;
+        const j = safeParse(body);
+        const models = j && Array.isArray(j.models) ? j.models : [];
+        const up = process.uptime();
+        const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(status === 200 ? 0x2ecc71 : 0xe74c3c)
+              .setTitle('Gateway status')
+              .setDescription(
+                `**Endpoint:** \`${gatewayBase()}\`\n` +
+                  `**HTTP:** ${status} · **Latency:** ${latency} ms\n` +
+                  `**Models:** ${models.length ? models.map((x) => x.id || x).join(', ') : '(none — is the gateway running?)'}\n` +
+                  `**Bot uptime:** ${h}h ${m}m\n\n` +
+                  (status !== 200 ? 'Gateway unreachable — start it with run.bat, then check the tunnel.' : '')
+              ),
+          ],
+        });
+      }
+      case 'source':
+        return interaction.reply({ content: '**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!' });
       case 'verify':
         return doVerify(interaction, opts.code);
       case 'voice': {
@@ -842,6 +933,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               `**Voice:** /voice join — talk, it answers out loud\n` +
               `**Moderation:** /auto-mod on — ChatGPT moderates channels\n` +
               `**Verification:** /verify — one-time-code role gate\n` +
+              `**Tools:** /export your chat, /status gateway health, /source the code\n` +
               `Prefix commands also work: ${config.prefix || '!'}chat, ${config.prefix || '!'}ask, …`
           );
         return interaction.reply({ embeds: [embed] });
@@ -868,6 +960,7 @@ const prefixAliases = {
   ask: 'ask', chat: 'chat', reset: 'reset', history: 'history', summarize: 'summarize',
   persona: 'persona', setprompt: 'setprompt', models: 'models', ping: 'ping', verify: 'verify',
   about: 'about', help: 'help', 'auto-mod': 'auto-mod', voice: 'voice',
+  export: 'export', status: 'status', source: 'source',
 };
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || message.guild === null) return;
@@ -946,6 +1039,33 @@ client.on(Events.MessageCreate, async (message) => {
         await gatewayChat('ping-' + message.author.id, 'Reply with the single word: pong');
         return message.reply(`Pong — gateway round-trip **${Date.now() - t0} ms**.`);
       }
+      case 'export': {
+        const format = rest.trim().toLowerCase() === 'json' ? 'json' : 'md';
+        const chatId = chatIdFor(sessionKeyFor(message.author.id));
+        const { status, body } = await gatewayGet('/api/export?chatId=' + encodeURIComponent(chatId) + '&format=' + format);
+        if (status !== 200) {
+          const j = safeParse(body);
+          return message.reply('Could not export — ' + ((j && j.error) || ('gateway returned ' + status)) + '. Chat with me first.');
+        }
+        return message.reply({ content: 'Here is your conversation:', files: [{ attachment: Buffer.from(body), name: 'conversation.' + format }] });
+      }
+      case 'status': {
+        const t0 = Date.now();
+        const { status, body } = await gatewayGet('/v1/models');
+        const latency = Date.now() - t0;
+        const j = safeParse(body);
+        const models = j && Array.isArray(j.models) ? j.models : [];
+        const up = process.uptime();
+        const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
+        return message.reply(
+          `**Gateway status**\n**Endpoint:** \`${gatewayBase()}\`\n**HTTP:** ${status} · **Latency:** ${latency} ms\n` +
+            `**Models:** ${models.length ? models.map((x) => x.id || x).join(', ') : '(none — is the gateway running?)'}\n` +
+            `**Bot uptime:** ${h}h ${m}m\n\n` +
+            (status !== 200 ? 'Gateway unreachable — start it with run.bat, then check the tunnel.' : '')
+        );
+      }
+      case 'source':
+        return message.reply('**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!');
       case 'verify': return doVerify(fake, rest.trim());
       case 'voice': {
         const action = rest.trim().toLowerCase();

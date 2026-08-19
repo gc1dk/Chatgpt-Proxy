@@ -834,6 +834,8 @@
         bubble.reset();
       } else if (ev.type === 'queue') {
         queueInfo.textContent = ev.position > 0 ? 'Waiting for your turn in the queue…' : '';
+      } else if (ev.type === 'status') {
+        showStatus(ev.text || '');
       } else if (ev.type === 'done') {
         bubble.finish(ev.text || '');
         if (voiceEnabled && (ev.text || bubble.buf)) speak(ev.text || bubble.buf);
@@ -841,6 +843,18 @@
         bubble.error(ev);
       }
     }
+  }
+
+  let statusTimer = null;
+  function showStatus(text) {
+    const rs = $('#rate-status');
+    if (!rs) return;
+    rs.textContent = text;
+    rs.hidden = false;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+      rs.hidden = true;
+    }, 20000);
   }
 
   function updateControls() {
@@ -1555,6 +1569,10 @@
       const t = localStorage.getItem('cgpt-theme');
       if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
     } catch (e) {}
+    if (location.hostname.endsWith('.pages.dev')) {
+      const db = $('#demo-banner');
+      if (db) db.hidden = false;
+    }
     const s = await refreshChatList();
     if (s && s.activeChatId) {
       await selectChat(s.activeChatId);

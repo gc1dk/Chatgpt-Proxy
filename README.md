@@ -164,6 +164,10 @@ All options are environment variables:
 | `MAX_PROMPT`  | `500000`                | Max characters per message — ChatGPT's guest-mode ceiling is the model context (~128k tokens ≈ 500k chars). The web UI and API reject larger messages with a clear error |
 | `CONTEXT_BUDGET` | `320000`             | Max characters fed back into the model when restoring/refreshing a chat's context. Over-budget chats are auto-compacted with a rolling summary (never fails with "message too long") |
 | `TTS_MAX_CHARS` | `20000`               | Max characters that can be spoken in one `/api/tts` call |
+| `RATE_LIMIT_RETRIES` | `3`              | **v8.0 — rate-limit armor.** How many times a request is auto-retried when free-tier ChatGPT answers `rate_limited`. Set `0` to disable retries |
+| `RATE_LIMIT_BASE_DELAY_MS` | `15000`     | **v8.0.** First backoff delay before a retry (each retry waits `base × attempt` ms). The web UI + Discord bot show a small "rate-limited, retrying…" notice instead of failing |
+| `CORS_ALLOW` | `0`                      | **v8.0.** Set to `1` to allow browser apps on **any** origin (e.g. a private Pages.dev demo) to call `/api` + `/v1`. Off by default |
+| `CORS_ORIGINS` | *(none)*              | **v8.0.** Comma-separated allow-list of origins instead of `*`, e.g. `CORS_ORIGINS=https://your-site.pages.dev` |
 
 **Examples**
 
@@ -269,9 +273,9 @@ Body: `{ "chatId": "...", "title": "..." }` — renames the chat (title capped a
 
 Body: `{ "chatId": "..." }` — deletes the chat, closes its browser tab, and clears the active chat if it was active. Chats owned by other clients are rejected with `404`.
 
-### `GET /api/export?chatId=...`
+### `GET /api/export?chatId=...&format=md|json`
 
-Downloads the full chat as a Markdown file (`text/markdown` attachment). Only the owner client can export a chat; anyone else gets `404`.
+Downloads the full chat as a **Markdown** file (`text/markdown` attachment) or, with `format=json`, as a **JSON** file (`{ title, createdAt, updatedAt, exportedAt, messages[] }`). Internal memory/system-prompt messages are filtered out — only real user/assistant turns are exported. Only the owner client can export a chat; anyone else gets `404`. The web UI has an export button on each chat, and the Discord bot has `/export`.
 
 ### `GET /api/settings` / `POST /api/settings`
 
@@ -307,6 +311,10 @@ Returns browser status, queue length, captcha/gate state, LAN IPs, and port.
 
 The `discord/` folder contains a complete, free Discord bot that uses your gateway as its brain — no OpenAI API keys, ever. Everything is editable: one file (`bot.js`), a plain `config.json`, and `personas.json` for personas.
 
+**Easiest start:** double-click `discord/run.bat` — it checks Node, installs dependencies, walks you through creating `config.json` (opens Notepad with the example, confirms the token), pings the gateway, then starts the bot.
+
+Or manually:
+
 ```bash
 cd discord
 npm install
@@ -317,6 +325,7 @@ npm start
 **What it does:**
 
 - **Text** — `/chat` (persistent per-user conversation on the gateway, unlimited context via auto-compaction), `/ask` (one-shot), `/reset`, `/history`, `/summarize`, `/persona`, `/setprompt <text>`, `/models`, `/ping`, `/about`, `/help`. Prefix commands work too (`!chat`, `!ask`, `!auto-mod on`, …).
+- **Export** — `/export` downloads your conversation as a Markdown file (`/export json` for JSON). **Status** — `/status` shows gateway health, latency and served models. **Source** — `/source` links to the GitHub repo. **Rate-limit armor** — if free-tier ChatGPT is rate-limited, the bot retries with backoff (3 tries) instead of failing.
 - **Voice** — `/voice join`, then just talk: the bot transcribes you locally (Vosk, free/offline, ~40 MB model auto-downloaded), sends it through the gateway, and **speaks the reply out loud** (Edge TTS). `/voice leave`, `/voice status`, `voice.speakReplies` also reads text replies aloud while you're in VC.
 - **Auto-mod** — `/auto-mod on` makes ChatGPT moderate your channels against a policy you define (`/auto-mod policy <rules>`, `/auto-mod action <warn|delete|timeout>`, per-channel scoping, DM warnings, `reportChannel` logging, role-ignore list). Rate-limited so ChatGPT is never flooded.
 - **Verification** — with `requireVerification: true` users need the `verifiedRoleName` role; `/verify` issues one-time DM codes. `allowedRoles` can restrict the bot to specific roles.
@@ -500,6 +509,7 @@ Click **New chat** in the sidebar, or delete `./profile` and restart.
 - [x] At-rest encryption (`ENCRYPT_KEY`) + per-client rate limits
 - [x] Unlimited context (auto-compaction: rolling summaries, `CONTEXT_BUDGET`) + self-healing submit retry
 - [x] Discord bot (`discord/`): chat, voice (Vosk STT + Edge TTS), `/auto-mod`, verification, personas, prefix commands
+- [x] **v8.0** Rate-limit armor (auto-retry + backoff), chat export (`format=json`, UI button, Discord `/export`), Discord `/status` + `/source`, GitHub source button, CORS demo mode (`CORS_ALLOW` / `CORS_ORIGINS`)
 - [x] MIT License
 - [ ] More resilient driver during live ChatGPT A/B tests (heuristics already cover composer/submit)
 - [ ] Role-based accounts (admin vs member)

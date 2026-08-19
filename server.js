@@ -13,6 +13,8 @@ const HEADED = process.env.HEADED === '1';
 const PROFILE = process.env.PROFILE || path.join(__dirname, 'profile');
 const TIMEOUT = parseInt(process.env.TIMEOUT || '300000', 10);
 const JOB_WATCHDOG_MS = Math.max(360000, TIMEOUT * 2 + 60000);
+const RATE_LIMIT_RETRIES = parseInt(process.env.RATE_LIMIT_RETRIES || '3', 10);
+const RATE_LIMIT_BASE_DELAY_MS = parseInt(process.env.RATE_LIMIT_BASE_DELAY_MS || '15000', 10);
 const STATE_FILE = process.env.STATE_FILE || path.join(__dirname, 'state.json');
 const CHATS_FILE = process.env.CHATS_FILE || path.join(__dirname, 'chats.json');
 const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'settings.json');
@@ -79,6 +81,29 @@ function clientIdOf(req) {
 
 app.use('/api', requireAuth);
 app.use('/v1', requireAuth);
+
+// v8.0 demo mode: let a browser-based demo (e.g. on Pages.dev) call the API.
+// Off by default. Enable with CORS_ALLOW=1 (any origin) or list specific
+// origins in CORS_ORIGINS=comma,separated.
+const CORS_ALLOW = process.env.CORS_ALLOW === '1';
+const CORS_ORIGINS = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use((req, res, next) => {
+  const origin = req.header('origin');
+  if (origin && (CORS_ALLOW || CORS_ORIGINS.includes(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Client-Id, X-Client-Token, X-Session-Id');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+  }
+  next();
+});
 
 function requireAuth(req, res, next) {
   req.masterAuth = false;
@@ -415,6 +440,35 @@ const sseOpenAI = (res, payload) => {
   } catch {}
 };
 
+// v8.0 rate-limit armor: when free ChatGPT says "rate_limited", retry the same
+// submit with backoff instead of failing the request. Tune with env:
+// RATE_LIMIT_RETRIES (default 3) and RATE_LIMIT_BASE_DELAY_MS (default 15000).
+async function submitWithArmor(job, driver, abortedPromise, onDelta) {
+  let result = null;
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {
+    if (job.aborted) return null;
+    result = await Promise.race([
+      driver.submit({ chatId: job.chatId, message: job.message, onDelta }),
+      abortedPromise.then(() => null),
+    ]);
+    if (!result || result.error !== 'rate_limited' || job.aborted || attempt >= RATE_LIMIT_RETRIES) break;
+    const delay = RATE_LIMIT_BASE_DELAY_MS * (attempt + 1);
+    console.log(`[server] rate_limited, retry ${attempt + 1}/${RATE_LIMIT_RETRIES} in ${Math.round(delay / 1000)}s (chat ${job.chatId})`);
+    const note = `ChatGPT is rate limited — retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${RATE_LIMIT_RETRIES})`;
+    try {
+      if (job.res.writableEnded) return null;
+      if (job.openai) {
+        job.res.write(`: ${note}\n\n`);
+      } else {
+        job.res.write(`data: ${JSON.stringify({ type: 'status', text: note })}\n\n`);
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, delay));
+    if (job.aborted) return null;
+  }
+  return result;
+}
+
 async function pump() {
   if (processing) return;
   processing = true;
@@ -500,32 +554,26 @@ async function pump() {
             saveStore();
           }
           let streamedText = '';
-          let result = await Promise.race([
-            driver.submit({
-              chatId: job.chatId,
-              message: job.message,
-              onDelta: (d) => {
-                if (job.aborted) return;
-                if (job.openai) {
-                  if (d === RESET_MARKER) {
-                    streamedText = '';
-                  } else if (d) {
-                    streamedText += d;
-                    sseOpenAI(job.res, oaiChunk(job.id, d));
-                  }
-                  return;
-                }
-                if (d === RESET_MARKER) {
-                  streamedText = '';
-                  sse(job.res, { type: 'reset' });
-                } else if (d) {
-                  streamedText += d;
-                  sse(job.res, { type: 'delta', text: d });
-                }
-              },
-            }),
-            abortedPromise.then(() => null),
-          ]);
+          const onDeltaFor = (d) => {
+            if (job.aborted) return;
+            if (job.openai) {
+              if (d === RESET_MARKER) {
+                streamedText = '';
+              } else if (d) {
+                streamedText += d;
+                sseOpenAI(job.res, oaiChunk(job.id, d));
+              }
+              return;
+            }
+            if (d === RESET_MARKER) {
+              streamedText = '';
+              sse(job.res, { type: 'reset' });
+            } else if (d) {
+              streamedText += d;
+              sse(job.res, { type: 'delta', text: d });
+            }
+          };
+          let result = await submitWithArmor(job, driver, abortedPromise, onDeltaFor);
           // never-fail guard: one self-healing retry with a fresh, compacted page
           if (
             result &&
@@ -569,25 +617,7 @@ async function pump() {
               driver.submit({
                 chatId: job.chatId,
                 message: job.message,
-                onDelta: (d) => {
-                  if (job.aborted) return;
-                  if (job.openai) {
-                    if (d === RESET_MARKER) {
-                      streamedText = '';
-                    } else if (d) {
-                      streamedText += d;
-                      sseOpenAI(job.res, oaiChunk(job.id, d));
-                    }
-                    return;
-                  }
-                  if (d === RESET_MARKER) {
-                    streamedText = '';
-                    sse(job.res, { type: 'reset' });
-                  } else if (d) {
-                    streamedText += d;
-                    sse(job.res, { type: 'delta', text: d });
-                  }
-                },
+                onDelta: onDeltaFor,
               }),
               abortedPromise.then(() => null),
             ]);
@@ -834,18 +864,38 @@ app.get('/api/export', (req, res) => {
     res.status(404).json({ error: 'chat not found' });
     return;
   }
+  const format = String(req.query.format || 'md').toLowerCase();
   const title = chat.title || 'New chat';
-  const blocks = ['# ' + title, ''];
-  for (const m of chat.messages || []) {
-    if (m.role === 'user') blocks.push('## You', '', m.text || '', '');
-    else if (m.role === 'assistant') blocks.push('## ChatGPT', '', m.text || '', '');
-  }
   const safe =
     title
       .replace(/[^a-z0-9-_ ]/gi, '')
       .trim()
       .replace(/\s+/g, '-')
       .slice(0, 60) || 'chat';
+  const messages = cleanMessages(chat.messages, settings.systemPrompt, chat.lastMemoryText, chat.hiddenPrompts);
+  if (format === 'json') {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '.json"');
+    res.send(
+      JSON.stringify(
+        {
+          title,
+          createdAt: chat.createdAt || null,
+          updatedAt: chat.updatedAt || null,
+          exportedAt: Date.now(),
+          messages: messages.map((m) => ({ role: m.role, text: m.text })),
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+  const blocks = ['# ' + title, '', '_Exported ' + new Date().toLocaleString() + ' — ' + messages.length + ' messages_', ''];
+  for (const m of messages) {
+    if (m.role === 'user') blocks.push('## You', '', m.text || '', '');
+    else if (m.role === 'assistant') blocks.push('## ChatGPT', '', m.text || '', '');
+  }
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '.md"');
   res.send(blocks.join('\n'));
@@ -1142,7 +1192,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     c.messages.push({ role: 'user', text: prompt });
     saveStore();
-    const result = await driver.submit({ chatId, message: prompt, onDelta: null });
+    const armorJob = { chatId, message: prompt, res, openai: true, aborted: false };
+    const result = await submitWithArmor(armorJob, driver, new Promise(() => {}), null);
     const finalText = cleanText((result && result.text) || '');
     const cc = getChat(chatId);
     if (cc && finalText) {
