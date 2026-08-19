@@ -325,14 +325,15 @@ a.icon-btn {
   #github-btn svg { transition: none; }
   #github-btn:hover {
     transform: none;
-    animation: github-roll 1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: github-roll 1.2s cubic-bezier(0.45, 0, 0.2, 1) forwards;
   }
   #github-btn:hover svg { transform: none; }
   @keyframes github-roll {
-    0%   { transform: translateX(0) rotate(0); opacity: 1; }
-    40%  { transform: translateX(80vw) rotate(400deg); opacity: 0; }
-    75%  { transform: translateX(-2rem) rotate(-40deg); opacity: 0; }
-    100% { transform: translateX(0) rotate(0); opacity: 1; }
+    0%   { transform: translateX(0) rotate(0) scale(1.06); opacity: 1; }
+    22%  { transform: translateX(85vw) rotate(540deg) scale(1); opacity: 1; }
+    40%  { transform: translateX(85vw) rotate(540deg) scale(1); opacity: 0; }
+    68%  { transform: translateX(85vw) rotate(540deg) scale(1); opacity: 0; }
+    100% { transform: translateX(0) rotate(0) scale(1.06); opacity: 1; }
   }
 
 html[data-theme="dark"] #icon-sun { display: none; }

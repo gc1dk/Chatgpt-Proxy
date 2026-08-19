@@ -115,7 +115,14 @@
     if (btn) btn.classList.add('speaking');
     try {
       const res = await api('/api/tts?text=' + encodeURIComponent(t.slice(0, 20000)) + '&voice=' + encodeURIComponent(voiceName));
-      if (!res.ok) throw new Error('tts ' + res.status);
+      if (!res.ok) {
+        let msg = 'Speech unavailable (' + res.status + ')';
+        try {
+          const j = await res.json();
+          if (j && j.error) msg = 'Speech: ' + String(j.error).slice(0, 200);
+        } catch (e2) {}
+        throw new Error(msg);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       audioEl.src = url;
@@ -123,10 +130,16 @@
         if (btn) btn.classList.remove('speaking');
         URL.revokeObjectURL(url);
       };
-      await audioEl.play();
+      try {
+        await audioEl.play();
+      } catch (playErr) {
+        URL.revokeObjectURL(url);
+        throw new Error('Playback blocked — click the page once, then try again.');
+      }
     } catch (e) {
       if (btn) btn.classList.remove('speaking');
       console.error('tts', e);
+      showStatus(String((e && e.message) || 'Speech unavailable'));
     }
   }
 
@@ -1495,13 +1508,21 @@
         mic.classList.remove('listening');
       };
       rec.onend = stopListening;
-      rec.onerror = stopListening;
+      rec.onerror = (e) => {
+        stopListening();
+        const err = e && e.error;
+        if (err === 'not-allowed') showStatus('Mic blocked — allow microphone access for this site, then try again.');
+        else if (err === 'no-speech') showStatus('No speech detected — try again.');
+        else if (err === 'network') showStatus('Mic failed (network) — try again.');
+        else if (err) showStatus('Mic error: ' + err);
+      };
       listening = true;
       mic.classList.add('listening');
       try {
         rec.start();
       } catch (e) {
         stopListening();
+        showStatus('Mic failed to start — try again.');
       }
     });
   } else if (mic) {
@@ -1510,6 +1531,7 @@
     mic.title = 'Voice input needs a secure page (https or localhost). Open the https URL shown in the sidebar, or enable the HTTPS option in run.bat.';
     mic.addEventListener('click', () => {
       const hint = 'Voice input needs a secure page (https or localhost).\n\nTo use the mic over your LAN, enable the HTTPS option in run.bat (setup wizard), then open the https URL shown in the sidebar.';
+      showStatus(hint);
       try {
         alert(hint);
       } catch (e) {}

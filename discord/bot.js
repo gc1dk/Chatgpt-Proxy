@@ -79,7 +79,7 @@ loadConfig();
 let state = { sessions: {}, prompts: {}, mods: {}, pendingVerify: {} };
 function loadState() {
   try {
-    state = { sessions: {}, prompts: {}, mods: {}, pendingVerify: {}, ...JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) };
+    state = { sessions: {}, prompts: {}, mods: {}, pendingVerify: {}, personas: {}, ...JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')) };
   } catch {}
 }
 function saveState() {
@@ -110,7 +110,7 @@ const sessionKeyFor = (userId) => {
 };
 const systemPromptFor = (userId) => {
   if (state.prompts[userId] && state.prompts[userId].trim()) return state.prompts[userId].trim();
-  const persona = personas.find((p) => p.name === state.personas[userId]);
+  const persona = personas.find((p) => p.name === (state.personas || {})[userId]);
   if (persona && persona.prompt) return persona.prompt.trim();
   return String(config.systemPrompt || '').trim();
 };
@@ -711,6 +711,10 @@ async function replyText(target, text) {
     target.deferred = true;
   }
 }
+async function respond(target, payload) {
+  if (target.deferred || target.replied) return target.editReply(payload);
+  return target.reply(payload);
+}
 async function speakIfInVoice(guildId, userId, text) {
   if (config.voice.speakReplies === false) return;
   const conn = getVoiceConnection(guildId);
@@ -804,8 +808,9 @@ const client = new Client({
 client.once(Events.ClientReady, async (c) => {
   console.log(`[bot] logged in as ${c.user.tag} (${c.user.id})`);
   console.log(`[bot] gateway: ${GATEWAY}`);
-  if (config.botName && config.botName !== 'ChatGPT Bot') c.user.setUsername(config.botName).catch(() => {});
-  c.user.setActivity('/help', { type: 3 }).catch(() => {});
+  const settle = (p) => { try { if (p && typeof p.catch === 'function') p.catch(() => {}); } catch {} };
+  if (config.botName && config.botName !== 'ChatGPT Bot') settle(c.user.setUsername(config.botName));
+  settle(c.user.setActivity('/help', { type: 3 }));
   const cmds = cmdDefs.map((d) => d.toJSON());
   try {
     if (config.guildId) {
@@ -832,8 +837,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const msg = isVerified(member)
       ? 'This bot is restricted to specific roles in this server.'
       : `You need the **${config.verifiedRoleName}** role to use this bot. Run /verify to get it.`;
-    return interaction.reply({ content: msg, ephemeral: true });
+    return respond(interaction,{ content: msg, ephemeral: true });
   }
+  const privateCmd = ['history', 'persona', 'setprompt', 'models', 'verify', 'voice', 'auto-mod', 'export'].includes(commandName);
+  await interaction.deferReply({ ephemeral: privateCmd }).catch(() => {});
   try {
     switch (commandName) {
       case 'ask': {
@@ -847,10 +854,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       case 'reset': {
         state.sessions[user.id] = 'discord-' + user.id + '-' + crypto.randomBytes(4).toString('hex');
         saveState();
-        return interaction.reply({ content: 'Conversation reset. Starting fresh.', ephemeral: false });
+        return respond(interaction,{ content: 'Conversation reset. Starting fresh.', ephemeral: false });
       }
       case 'history': {
-        if (!config.perUserSessions) return interaction.reply({ content: 'Sessions are shared in this bot\'s config (perUserSessions=false).', ephemeral: true });
+        if (!config.perUserSessions) return respond(interaction,{ content: 'Sessions are shared in this bot\'s config (perUserSessions=false).', ephemeral: true });
         const limit = opts.limit || 10;
         const sessionKey = sessionKeyFor(user.id);
         const sys = systemPromptFor(user.id);
@@ -863,26 +870,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
       case 'persona': {
         if (!opts.name) {
           const list = personas.map((p) => `**${p.name}** — ${p.description}`).join('\n');
-          return interaction.reply({ content: `Personas:\n${list}`, ephemeral: true });
+          return respond(interaction,{ content: `Personas:\n${list}`, ephemeral: true });
         }
         const p = personas.find((x) => x.name.toLowerCase() === opts.name.toLowerCase());
-        if (!p) return interaction.reply({ content: `Unknown persona "${opts.name}".`, ephemeral: true });
+        if (!p) return respond(interaction,{ content: `Unknown persona "${opts.name}".`, ephemeral: true });
         state.personas = state.personas || {};
         state.personas[user.id] = p.name;
         delete state.prompts[user.id];
         saveState();
-        return interaction.reply({ content: `Persona switched to **${p.name}**. (Reset with /reset to drop history.)` });
+        return respond(interaction,{ content: `Persona switched to **${p.name}**. (Reset with /reset to drop history.)` });
       }
       case 'setprompt': {
         const text = String(opts.text || '').trim();
         if (text.toLowerCase() === 'clear') {
           delete state.prompts[user.id];
           saveState();
-          return interaction.reply({ content: 'Custom prompt cleared.', ephemeral: true });
+          return respond(interaction,{ content: 'Custom prompt cleared.', ephemeral: true });
         }
         state.prompts[user.id] = text.slice(0, 4000);
         saveState();
-        return interaction.reply({ content: 'Custom system prompt set. It applies from your next message.', ephemeral: true });
+        return respond(interaction,{ content: 'Custom system prompt set. It applies from your next message.', ephemeral: true });
       }
       case 'models': {
         const u = new URL(GATEWAY + '/models');
@@ -896,18 +903,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
             try {
               const j = JSON.parse(buf);
               const names = (j.data || []).map((m) => `**${m.id}**`).join('\n') || '(none)';
-              interaction.reply({ content: `Models served by the gateway:\n${names}`, ephemeral: true }).catch(() => {});
+              respond(interaction,{ content: `Models served by the gateway:\n${names}`, ephemeral: true }).catch(() => {});
             } catch {
-              interaction.reply({ content: 'Could not reach the gateway.', ephemeral: true }).catch(() => {});
+              respond(interaction,{ content: 'Could not reach the gateway.', ephemeral: true }).catch(() => {});
             }
           });
-        }).on('error', () => interaction.reply({ content: 'Could not reach the gateway.', ephemeral: true }).catch(() => {}));
+        }).on('error', () => respond(interaction,{ content: 'Could not reach the gateway.', ephemeral: true }).catch(() => {}));
         return;
       }
       case 'ping': {
         const t0 = Date.now();
         await gatewayChat('ping-' + user.id, 'Reply with the single word: pong');
-        return interaction.reply({ content: `Pong — gateway round-trip **${Date.now() - t0} ms**.` });
+        return respond(interaction,{ content: `Pong — gateway round-trip **${Date.now() - t0} ms**.` });
       }
       case 'export': {
         const format = opts.format === 'json' ? 'json' : 'md';
@@ -915,9 +922,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const { status, body } = await gatewayGet('/api/export?chatId=' + encodeURIComponent(chatId) + '&format=' + format);
         if (status !== 200) {
           const j = safeParse(body);
-          return interaction.reply({ content: 'Could not export — ' + ((j && j.error) || ('gateway returned ' + status)) + '. Chat with me first (/chat).', ephemeral: true });
+          return respond(interaction,{ content: 'Could not export — ' + ((j && j.error) || ('gateway returned ' + status)) + '. Chat with me first (/chat).', ephemeral: true });
         }
-        return interaction.reply({ content: 'Here is your conversation:', files: [{ attachment: Buffer.from(body), name: 'conversation.' + format }] });
+        return respond(interaction,{ content: 'Here is your conversation:', files: [{ attachment: Buffer.from(body), name: 'conversation.' + format }] });
       }
       case 'status': {
         const t0 = Date.now();
@@ -927,7 +934,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const models = j && Array.isArray(j.models) ? j.models : [];
         const up = process.uptime();
         const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
-        return interaction.reply({
+        return respond(interaction,{
           embeds: [
             new EmbedBuilder()
               .setColor(status === 200 ? 0x2ecc71 : 0xe74c3c)
@@ -943,7 +950,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
       case 'source':
-        return interaction.reply({ content: '**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!' });
+        return respond(interaction,{ content: '**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!' });
       case 'verify':
         return doVerify(interaction, opts.code);
       case 'voice': {
@@ -955,38 +962,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
             listeners.delete(guild.id);
             speechQueues.delete(guild.id);
           }
-          return interaction.reply({ content: 'Left the voice channel.', ephemeral: true });
+          return respond(interaction,{ content: 'Left the voice channel.', ephemeral: true });
         }
         if (action === 'status') {
           const conn = getVoiceConnection(guild.id);
           const vc = conn ? (conn.channel ? conn.channel.name : 'connected') : 'not in voice';
           const entry = listeners.get(guild.id);
           const model = voskModel || (modelPromise ? 'downloading…' : 'not loaded yet');
-          return interaction.reply({ content: `**Voice:** ${vc}\n**Listening to:** ${entry ? [...entry.transcribing].length : 0} speaker(s)\n**Speech model:** ${model}\n**TTS voice:** ${config.voice.ttsVoice || 'en-US-AriaNeural'}`, ephemeral: true });
+          return respond(interaction,{ content: `**Voice:** ${vc}\n**Listening to:** ${entry ? [...entry.transcribing].length : 0} speaker(s)\n**Speech model:** ${model}\n**TTS voice:** ${config.voice.ttsVoice || 'en-US-AriaNeural'}`, ephemeral: true });
         }
         if (action === 'join') {
-          if (config.voice.enabled === false) return interaction.reply({ content: 'Voice is disabled in config (voice.enabled=false).', ephemeral: true });
+          if (config.voice.enabled === false) return respond(interaction,{ content: 'Voice is disabled in config (voice.enabled=false).', ephemeral: true });
           const channel = (config.voice.channelId && guild.channels.cache.get(config.voice.channelId)) || member.voice.channel;
-          if (!channel) return interaction.reply({ content: 'Join a voice channel first (or set voice.channelId in config).', ephemeral: true });
+          if (!channel) return respond(interaction,{ content: 'Join a voice channel first (or set voice.channelId in config).', ephemeral: true });
           const existing = getVoiceConnection(guild.id);
           if (existing) {
             if (existing.joinConfig.channelId !== channel.id) existing.destroy();
-            else return interaction.reply({ content: `Already in **${channel.name}**.`, ephemeral: true });
+            else return respond(interaction,{ content: `Already in **${channel.name}**.`, ephemeral: true });
           }
           const conn = joinVoiceChannel({ channelId: channel.id, guildId: guild.id, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false });
           try {
             await entersState(conn, VoiceConnectionStatus.Ready, 20000);
           } catch {
             conn.destroy();
-            return interaction.reply({ content: 'Could not join the voice channel (network issue?).', ephemeral: true });
+            return respond(interaction,{ content: 'Could not join the voice channel (network issue?).', ephemeral: true });
           }
           const player = createAudioPlayer();
           conn.subscribe(player);
           ensureListening(conn, guild.id);
           console.log('[bot] voice listening in', channel.name);
-          return interaction.reply({ content: `Joined **${channel.name}**. Speak — I will answer out loud. The speech model may download on first use (~40 MB).`, ephemeral: true });
+          return respond(interaction,{ content: `Joined **${channel.name}**. Speak — I will answer out loud. The speech model may download on first use (~40 MB).`, ephemeral: true });
         }
-        return interaction.reply({ content: 'Use /voice join | leave | status', ephemeral: true });
+        return respond(interaction,{ content: 'Use /voice join | leave | status', ephemeral: true });
       }
       case 'auto-mod':
         return handleAutoMod(interaction, member, guild, opts);
@@ -1003,10 +1010,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
               `**Tools:** /export your chat, /status gateway health, /source the code\n` +
               `Prefix commands also work: ${config.prefix || '!'}chat, ${config.prefix || '!'}ask, …`
           );
-        return interaction.reply({ embeds: [embed] });
+        return respond(interaction,{ embeds: [embed] });
       }
       case 'help':
-        return interaction.reply({
+        return respond(interaction,{
           embeds: [
             new EmbedBuilder().setColor(0x10a37f).setTitle('Commands').setDescription(
               cmdDefs.map((d) => `**/${d.name}** — ${d.description}`).join('\n')
@@ -1017,7 +1024,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (e) {
     console.error('[bot] interaction error:', String((e && e.message) || e));
-    if (!interaction.replied && !interaction.deferred) interaction.reply({ content: 'Something went wrong: ' + String((e && e.message) || e), ephemeral: true }).catch(() => {});
+    if (!interaction.replied && !interaction.deferred) respond(interaction,{ content: 'Something went wrong: ' + String((e && e.message) || e), ephemeral: true }).catch(() => {});
   }
 });
 

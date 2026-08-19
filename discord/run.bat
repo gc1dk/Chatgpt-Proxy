@@ -1,7 +1,7 @@
 @echo off
 setlocal
 chcp 65001 >nul
-title ChatGPT Discord Bot - setup & run
+title ChatGPT Discord Bot - setup ^& run
 cd /d "%~dp0"
 
 echo ============================================================
@@ -59,9 +59,7 @@ if not exist config.json (
 echo [3/3] Checking the gateway...
 setlocal enabledelayedexpansion
 set GATEWAY_RAW=
-for /f "usebackq tokens=2 delims=:," %%a in (`findstr /i "gatewayUrl" config.json`) do set "GATEWAY_RAW=%%a"
-set GATEWAY_RAW=!GATEWAY_RAW:"=!
-set GATEWAY_RAW=!GATEWAY_RAW: =!
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "(Get-Content config.json | ConvertFrom-Json).gatewayUrl"`) do set "GATEWAY_RAW=%%a"
 if "!GATEWAY_RAW!"=="" set "GATEWAY_RAW=http://localhost:3000/v1"
 echo       Gateway: !GATEWAY_RAW!
 for /f "delims=" %%a in ('powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing -Uri '!GATEWAY_RAW!/models' -TimeoutSec 5).StatusCode" 2^>nul') do set "HTTP_CODE=%%a"
@@ -70,7 +68,7 @@ if "!HTTP_CODE!"=="200" (
 ) else (
   echo.
   echo       [WARN] Could not reach the gateway at !GATEWAY_RAW!.
-  echo       Start it first (run the gateway's run.bat), then start this bot.
+  echo       Start it first, then start this bot.
   echo.
   set /p START_ANYWAY="Start the bot anyway? (y/n): "
   if /i not "!START_ANYWAY!"=="y" (
