@@ -1572,10 +1572,17 @@
     if (location.hostname.endsWith('.pages.dev')) {
       const db = $('#demo-banner');
       if (db) db.hidden = false;
+      const ws = $('#welcome-sub');
+      if (ws) ws.textContent = 'Live public demo - your chats go through the demo backend and are not private.';
     }
-    const s = await refreshChatList();
+    let s = null;
+    try {
+      s = await refreshChatList();
+    } catch (e) {}
     if (s && s.activeChatId) {
-      await selectChat(s.activeChatId);
+      try {
+        await selectChat(s.activeChatId);
+      } catch (e) {}
     }
     boot(100, 'Ready');
     input.focus();
