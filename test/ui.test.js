@@ -80,12 +80,11 @@ after(async () => {
   await mock.stop().catch(() => {});
 });
 
-test('landing: welcome shown, tabs visible', async () => {
+test('landing: welcome shown, composer visible', async () => {
   const welcome = await page.locator('#welcome').isVisible();
   assert.ok(welcome, 'welcome should be visible');
-  const chatTab = await page.locator('#tab-chat').isVisible();
-  const codeTab = await page.locator('#tab-code').isVisible();
-  assert.ok(chatTab && codeTab, 'tabs should be visible');
+  const composer = await page.locator('#input').isVisible();
+  assert.ok(composer, 'composer should be visible');
 });
 
 test('new chat button creates a chat and focuses composer', async () => {
@@ -111,39 +110,12 @@ test('send a message → user + assistant bubbles render (and complete)', async 
   assert.equal(streaming, 0, 'no bubble should remain streaming after done');
 });
 
-test('code tab badge + artifact appears after a code reply', async () => {
-  await page.locator('#input').fill('write a js function');
-  await page.locator('#send').click();
-  await page.waitForFunction(
-    () => {
-      const b = document.getElementById('code-tab-badge');
-      return b && !b.hidden && b.textContent !== '0';
-    },
-    null,
-    { timeout: 20000 }
-  );
-  const badge = await page.locator('#code-tab-badge').textContent();
-  assert.equal(badge, '1', 'badge should show exactly one artifact (badge=' + badge + ')');
-});
-
 test('boot overlay hides once ready', async () => {
   await page.waitForFunction(() => document.getElementById('boot-overlay').hidden, null, { timeout: 15000 });
   assert.ok(true, 'boot overlay should hide after the app connects');
 });
 
-test('code tab shows live preview + editor', async () => {
-  await page.locator('#tab-code').click();
-  await page.waitForTimeout(400);
-  const editor = await page.locator('#code-editor').isVisible();
-  const preview = await page.locator('.code-preview-wrap').count();
-  const empty = await page.locator('#code-preview-empty').isVisible();
-  assert.ok(editor, 'code editor should be visible');
-  assert.equal(preview, 1, 'preview wrap should exist');
-  assert.ok(empty, 'empty-preview hint should show when no artifact is loaded');
-});
-
 test('settings modal opens and closes', async () => {
-  await page.locator('#tab-chat').click();
   await page.locator('#settings-btn').click();
   await page.waitForTimeout(300);
   const modal = await page.locator('#settings-modal').isVisible();

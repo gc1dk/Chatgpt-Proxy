@@ -78,11 +78,6 @@
       <span><b>Live demo</b> — this instance is publicly hosted; chats run on a demo backend. Your conversations here are shared and temporary. <a href="https://github.com/gc1dk/Chatgpt-Proxy" target="_blank" rel="noopener">Get your own copy</a></span>
     </div>
 
-    <div class="tabs" id="tabs">
-      <button class="tab active" data-tab="chat" id="tab-chat">Chat</button>
-      <button class="tab" data-tab="code" id="tab-code">Code <span class="tab-badge" id="code-tab-badge" hidden></span></button>
-    </div>
-
     <div class="tab-panels">
       <section class="tab-panel chat-panel active" data-panel="chat" id="panel-chat">
         <div class="messages" id="messages">
@@ -113,44 +108,6 @@
             </button>
           </form>
           <p class="disclaimer">ChatGPT is AI and can make mistakes. Chats may be reviewed and used to improve our AI models. The AI models belong to OpenAI — this project does not own, train, or modify them, and is not affiliated with OpenAI.</p>
-        </div>
-      </section>
-
-      <section class="tab-panel code-panel" data-panel="code" id="panel-code" hidden>
-        <div class="code-toolbar">
-          <div class="code-toolbar-group">
-            <select id="code-versions" class="code-versions" title="Pick a version" aria-label="Versions"></select>
-            <span class="code-file-chip" id="code-file-chip" hidden><span class="code-file-icon">&#9783;</span><span id="code-filename"></span></span>
-            <span class="code-kind" id="code-kind"></span>
-          </div>
-          <div class="code-toolbar-actions">
-            <span class="auto-badge" id="auto-badge" hidden title="Auto-syncs to the latest code from the chat"><span class="auto-dot"></span>Auto</span>
-            <button id="code-run" class="code-btn" title="Restart the live preview">
-              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M6.3 4.2a1 1 0 0 1 1.52-.85l9 5.3a1 1 0 0 1 0 1.7l-9 5.3a1 1 0 0 1-1.52-.85V4.2Z"/></svg>
-              <span>Run</span>
-            </button>
-            <button id="code-copy" class="code-btn" title="Copy current file">
-              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.25 2.25C5.46 2.25 4 3.71 4 5.5v8.25a.75.75 0 0 0 1.5 0V5.5c0-.97.78-1.75 1.75-1.75h5.25a.75.75 0 0 0 0-1.5H7.25ZM11 5.25c-1.8 0-3.25 1.46-3.25 3.25v7c0 1.8 1.46 3.25 3.25 3.25h4c1.8 0 3.25-1.46 3.25-3.25v-7c0-1.8-1.46-3.25-3.25-3.25h-4Zm-1.75 3.25c0-.97.78-1.75 1.75-1.75h4c.97 0 1.75.78 1.75 1.75v7c0 .97-.78 1.75-1.75 1.75h-4a1.75 1.75 0 0 1-1.75-1.75v-7Z"/></svg>
-              <span>Copy</span>
-            </button>
-            <button id="code-download" class="code-btn" title="Download current file">
-              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 1.75a.75.75 0 0 1 .75.75v8.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 1 1 1.06-1.06l2.72 2.72V2.5A.75.75 0 0 1 10 1.75ZM3.25 16a.75.75 0 0 1 .75-.75h12a.75.75 0 0 1 0 1.5H4a.75.75 0 0 1-.75-.75Z"/></svg>
-              <span>Download</span>
-            </button>
-            <button id="code-open" class="code-btn" title="Open preview in a new tab">
-              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3.25 6A3.25 3.25 0 0 1 6.5 2.75h1.5a.75.75 0 0 1 0 1.5H6.5A1.75 1.75 0 0 0 4.75 6v8c0 .97.78 1.75 1.75 1.75h8A1.75 1.75 0 0 0 16.25 14v-1.5a.75.75 0 0 1 1.5 0V14A3.25 3.25 0 0 1 14.5 17.25h-8A3.25 3.25 0 0 1 3.25 14V6Zm10.5-2.75a.75.75 0 0 1 .75.75v1.69l4.22-4.22a.75.75 0 1 1 1.06 1.06L15.56 6.75h1.69a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75v-3.5a.75.75 0 0 1 .75-.75Z"/></svg>
-              <span>Open</span>
-            </button>
-          </div>
-        </div>
-        <div class="code-workspace">
-          <div class="code-preview-wrap" id="code-preview-wrap">
-            <iframe id="code-preview" sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups" title="Live preview"></iframe>
-            <div class="code-preview-empty" id="code-preview-empty">No live preview — this file type isn't runnable. Edit it below, or use Open to view it in a new tab.</div>
-          </div>
-          <div class="code-editor-wrap">
-            <textarea id="code-editor" class="code-editor" spellcheck="false" placeholder="The latest code from the chat shows up here — runnable files play live in the preview above. Edit to update the preview, or use the Versions menu to jump to an earlier one."></textarea>
-          </div>
         </div>
       </section>
     </div>

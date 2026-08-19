@@ -383,17 +383,6 @@
     return CODE_DEFAULT;
   }
 
-  // Sniff the real file type from content when the model tags a block with an
-  // unknown/weird language (e.g. "php-template" for plain HTML).
-  function sniffLang(lang, code) {
-    const c = String(code || '').trim().slice(0, 2000);
-    if (/^<!doctype\s+html|<html[\s>]|<body[\s>]/i.test(c)) return 'html';
-    if (/^<svg[\s>]/i.test(c)) return 'svg';
-    if (/^<style[\s>]/i.test(c)) return 'css';
-    if (/^<script[\s>]/i.test(c)) return 'js';
-    return lang;
-  }
-
   function buildPreviewHtml(lang, code) {
     if (lang === 'html') return code;
     if (lang === 'svg') {
@@ -409,131 +398,7 @@
     return null;
   }
 
-  const artifacts = [];
-  let activeTab = 'chat';
-  let activeArtifactId = null;
-  let autoLatest = true;
   let turnIndex = 0;
-
-  function previewableLang(lang) {
-    return lang === 'html' || lang === 'svg' || lang === 'css' || lang === 'js' || lang === 'javascript' || lang === 'jsx';
-  }
-
-  function kindOf(lang) {
-    if (previewableLang(lang)) return 'code';
-    return 'doc';
-  }
-
-  function addArtifact(art) {
-    art.id = 'art-' + artifacts.length + '-' + Math.random().toString(36).slice(2, 7);
-    artifacts.push(art);
-    return art;
-  }
-
-  function harvestMessage(markdownEl, msgIndex) {
-    let pushed = false;
-    markdownEl.querySelectorAll('.code-block').forEach((b, i) => {
-      let lang = b._langId;
-      if (!CODE_LANGS[lang]) lang = sniffLang(lang, b._rawCode);
-      if (!CODE_LANGS[lang]) lang = 'txt';
-      const kind = previewableLang(lang) ? 'code' : (lang === 'md' || lang === 'markdown') ? 'doc' : 'code';
-      const info = CODE_LANGS[lang] || CODE_DEFAULT;
-      addArtifact({ msgIndex, n: i, kind, lang, title: info.filename, content: b._rawCode });
-      b.dataset.artId = artifacts[artifacts.length - 1].id;
-      pushed = true;
-    });
-    return pushed;
-  }
-
-  function rebuildVersions() {
-    const sel = $('#code-versions');
-    if (!sel) return;
-    sel.innerHTML = '';
-    const latest = document.createElement('option');
-    latest.value = 'latest';
-    latest.textContent = 'Latest (auto)';
-    sel.appendChild(latest);
-    for (let i = artifacts.length - 1; i >= 0; i--) {
-      const a = artifacts[i];
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      const kindLabel = a.kind === 'code' ? (a.lang || 'code').toUpperCase() : 'DOC';
-      opt.textContent = kindLabel + ' · ' + a.title + ' — turn ' + (a.msgIndex + 1);
-      sel.appendChild(opt);
-    }
-    if (autoLatest) {
-      sel.value = 'latest';
-    } else if (activeArtifactId && artifacts.some((a) => a.id === activeArtifactId)) {
-      sel.value = activeArtifactId;
-    } else {
-      autoLatest = true;
-      sel.value = 'latest';
-    }
-    $('#auto-badge').hidden = !autoLatest;
-    $('#code-tab-badge').hidden = artifacts.length === 0;
-    $('#code-tab-badge').textContent = String(artifacts.length);
-  }
-
-  let previewBlobUrl = null;
-  function updatePreview(art) {
-    const iframe = $('#code-preview');
-    const empty = $('#code-preview-empty');
-    if (!iframe) return;
-    if (previewBlobUrl) {
-      URL.revokeObjectURL(previewBlobUrl);
-      previewBlobUrl = null;
-    }
-    if (!art || !previewableLang(art.lang)) {
-      iframe.removeAttribute('src');
-      if (empty) empty.hidden = false;
-      return;
-    }
-    if (empty) empty.hidden = true;
-    const html = buildPreviewHtml(art.lang, art.content);
-    previewBlobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
-    iframe.src = previewBlobUrl;
-  }
-
-  function loadArtifact(art) {
-    const chip = $('#code-file-chip');
-    const fn = $('#code-filename');
-    if (!art) {
-      $('#code-editor').value = '';
-      $('#code-kind').textContent = '';
-      chip.hidden = true;
-      fn.textContent = '';
-      autoLatest = true;
-      updatePreview(null);
-      return;
-    }
-    activeArtifactId = art.id;
-    $('#code-editor').value = art.content;
-    $('#code-kind').textContent = art.kind === 'code' ? (art.lang || 'code').toUpperCase() : 'MARKDOWN';
-    chip.hidden = false;
-    fn.textContent = art.title;
-    if (chip) chip.classList.remove('edited');
-    updatePreview(art);
-  }
-
-  function switchTab(which) {
-    activeTab = which;
-    const chat = $('#panel-chat');
-    const code = $('#panel-code');
-    chat.hidden = which !== 'chat';
-    code.hidden = which !== 'code';
-    $('#tab-chat').classList.toggle('active', which === 'chat');
-    $('#tab-code').classList.toggle('active', which === 'code');
-    if (which === 'code' && autoLatest) {
-      const latest = artifacts[artifacts.length - 1];
-      loadArtifact(latest || null);
-    }
-    if (which === 'code') $('#code-editor').focus();
-  }
-
-  function openInNewTab(htmlOrText, htmlMode) {
-    const blob = new Blob([htmlOrText], { type: (htmlMode ? 'text/html' : 'text/plain') + ';charset=utf-8' });
-    window.open(URL.createObjectURL(blob), '_blank');
-  }
 
   function openInNewTab(htmlOrText, htmlMode) {
     const blob = new Blob([htmlOrText], { type: (htmlMode ? 'text/html' : 'text/plain') + ';charset=utf-8' });
@@ -581,12 +446,6 @@
       run.className = 'code-btn';
       run.textContent = 'Run';
       run.addEventListener('click', () => {
-        const art = artifacts.find((a) => a.id === wrap.dataset.artId);
-        if (art) {
-          loadArtifact(art);
-          switchTab('code');
-          return;
-        }
         openInNewTab(buildPreviewHtml(langId, rawCode) || rawCode, !!(CODE_LANGS[langId] || {}).preview);
       });
       actions.appendChild(run);
@@ -767,12 +626,6 @@
         msg.classList.remove('streaming');
         if (this.buf.trim()) {
           markdown.replaceChildren(renderMarkdown(this.buf));
-          if (harvestMessage(markdown, this.msgIndex)) {
-            rebuildVersions();
-            if (activeTab === 'code' && autoLatest) {
-              loadArtifact(artifacts[artifacts.length - 1] || null);
-            }
-          }
         } else {
           markdown.innerHTML = '';
         }
@@ -990,14 +843,6 @@
 
   function clearMessages() {
     messagesEl.querySelectorAll('.msg').forEach((m) => m.remove());
-    const iframe = $('#code-preview');
-    if (iframe) iframe.removeAttribute('src');
-    if (previewBlobUrl) {
-      URL.revokeObjectURL(previewBlobUrl);
-      previewBlobUrl = null;
-    }
-    const empty = $('#code-preview-empty');
-    if (empty) empty.hidden = false;
   }
 
   function renderChatList(chats, activeChatId) {
@@ -1084,7 +929,6 @@
     if (chatId === state.loadedChatId) return;
     state.currentChatId = chatId;
     clearMessages();
-    artifacts.length = 0;
     welcome.hidden = true;
     try {
       const h = await api('/api/history?chatId=' + encodeURIComponent(chatId)).then((r) => r.json());
@@ -1094,7 +938,6 @@
           else if (m.role === 'assistant') {
             const { msg, markdown, msgIndex } = addAssistantMessage();
             if (m.text.trim()) markdown.replaceChildren(renderMarkdown(m.text));
-            harvestMessage(markdown, msgIndex);
             addActions(msg, m.text);
           }
         }
@@ -1104,7 +947,6 @@
       state.loadedChatId = chatId;
     } catch (e) {}
     document.body.classList.remove('sidebar-open');
-    rebuildVersions();
     refreshChatList();
   }
 
@@ -1396,85 +1238,6 @@
 
   $('#settings-modal').addEventListener('click', (e) => {
     if (e.target.id === 'settings-modal') $('#settings-modal').hidden = true;
-  });
-
-  $('#tab-chat').addEventListener('click', () => switchTab('chat'));
-  $('#tab-code').addEventListener('click', () => switchTab('code'));
-
-  $('#code-versions').addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (val === 'latest') {
-      autoLatest = true;
-      loadArtifact(artifacts[artifacts.length - 1] || null);
-    } else {
-      autoLatest = false;
-      const art = artifacts.find((a) => a.id === val);
-      loadArtifact(art || null);
-    }
-  });
-
-  $('#code-run').addEventListener('click', () => {
-    const art = artifacts.find((a) => a.id === activeArtifactId);
-    if (art && previewableLang(art.lang)) {
-      updatePreview(art);
-      const btn = $('#code-run');
-      btn.classList.add('run-flash');
-      setTimeout(() => btn.classList.remove('run-flash'), 600);
-      return;
-    }
-    const lang = art ? art.lang : null;
-    const content = $('#code-editor').value;
-    const html = lang && previewableLang(lang) ? buildPreviewHtml(lang, content) : null;
-    openInNewTab(html || content, !!html);
-    const btn = $('#code-run');
-    btn.classList.add('run-flash');
-    setTimeout(() => btn.classList.remove('run-flash'), 600);
-  });
-
-  $('#code-copy').addEventListener('click', () => {
-    copyText($('#code-editor').value).then(() => {
-      const btn = $('#code-copy');
-      const label = btn.querySelector('span');
-      if (label) label.textContent = 'Copied';
-      else btn.textContent = 'Copied';
-      setTimeout(() => {
-        if (label) label.textContent = 'Copy';
-        else btn.textContent = 'Copy';
-      }, 1500);
-    });
-  });
-
-  $('#code-download').addEventListener('click', () => {
-    const art = artifacts.find((a) => a.id === activeArtifactId);
-    const content = $('#code-editor').value;
-    const lang = art ? art.lang : 'txt';
-    const info = CODE_LANGS[lang] || CODE_DEFAULT;
-    downloadText(content, info.filename);
-  });
-
-  $('#code-open').addEventListener('click', () => {
-    const art = artifacts.find((a) => a.id === activeArtifactId);
-    const lang = art ? art.lang : null;
-    const content = $('#code-editor').value;
-    const html = lang && previewableLang(lang) ? buildPreviewHtml(lang, content) : null;
-    openInNewTab(html || content, !!html);
-  });
-
-  $('#code-editor').addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') $('#code-run').click();
-  });
-
-  let codeEditTimer = null;
-  $('#code-editor').addEventListener('input', () => {
-    const art = artifacts.find((a) => a.id === activeArtifactId);
-    if (!art) return;
-    art.content = $('#code-editor').value;
-    const chip = $('#code-file-chip');
-    if (chip) chip.classList.add('edited');
-    clearTimeout(codeEditTimer);
-    codeEditTimer = setTimeout(() => {
-      if (previewableLang(art.lang)) updatePreview(art);
-    }, 700);
   });
 
   $('#settings-theme').addEventListener('click', () => {

@@ -255,6 +255,23 @@ class ChatGPTDriver {
     throw new Error('composer did not appear (verification may be blocking)');
   }
 
+  async _fileSelector(page) {
+    try {
+      return await page.evaluate(
+        (fileSels) => {
+          for (const s of fileSels) {
+            const el = document.querySelector(s);
+            if (el) return s;
+          }
+          return null;
+        },
+        this.selOrder.file
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async _waitForAttachments(page) {
     const start = Date.now();
     const deadline = start + 45000;
@@ -418,9 +435,13 @@ class ChatGPTDriver {
       // Attach images (if any) through the composer's real file input, then wait
       // for ChatGPT to finish processing them (thumbnails appear) before sending.
       if (images && images.length) {
+        const fileSel = await this._fileSelector(page);
+        if (!fileSel) {
+          throw new Error('could not attach the image to the composer (file input not found)');
+        }
         await page
           .setInputFiles(
-            this.selOrder.file,
+            fileSel,
             images.map((im) => ({
               name: im.name || 'image.png',
               mimeType: im.mimeType || 'image/png',

@@ -13,6 +13,7 @@ const HTML = `<!doctype html>
 <body>
   <div id="conv"></div>
   <div data-mobile-composer>
+    <input type="file" multiple>
     <textarea data-mobile-composer-prompt></textarea>
     <button data-composer-submit data-testid="send-btn">Send</button>
   </div>
@@ -20,9 +21,27 @@ const HTML = `<!doctype html>
     const conv = document.getElementById('conv');
     const ta = document.querySelector('[data-mobile-composer-prompt]');
     const btn = document.querySelector('[data-composer-submit]');
+    const fileInput = document.querySelector('input[type="file"]');
     btn.disabled = true;
     ta.addEventListener('input', () => {
       btn.disabled = !ta.value;
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (!fileInput.files.length) return;
+      const wrap = document.querySelector('[data-mobile-composer]');
+      const p = document.createElement('div');
+      p.setAttribute('data-testid', 'attachment-processing');
+      p.textContent = 'Processing image...';
+      wrap.appendChild(p);
+      setTimeout(() => {
+        p.remove();
+        const img = document.createElement('img');
+        img.setAttribute('alt', 'attachment preview');
+        img.style.width = '40px';
+        img.style.height = '40px';
+        wrap.appendChild(img);
+      }, 250);
     });
 
     function addMessage(role, text, streaming) {
@@ -39,8 +58,15 @@ const HTML = `<!doctype html>
 
     btn.addEventListener('click', () => {
       const text = ta.value;
-      if (!text) return;
-      addMessage('user', text);
+      if (!text && !fileInput.files.length) return;
+      if (fileInput.files.length) {
+        const img = document.createElement('img');
+        img.setAttribute('alt', 'attachment preview');
+        img.style.width = '40px';
+        img.style.height = '40px';
+        document.querySelector('[data-mobile-composer]').appendChild(img);
+      }
+      addMessage('user', text || 'image message');
       ta.value = '';
       // Simulate generation: append tokens, then finish.
       const el = addMessage('assistant', 'I', true);

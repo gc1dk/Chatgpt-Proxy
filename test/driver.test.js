@@ -56,6 +56,17 @@ test('submit(): returns mock reply text', async () => {
   assert.ok(result.text.includes("I'm the mock reply"), `got: ${result.text}`);
 });
 
+test('submit(): attaches an image and completes', async () => {
+  await makeDriver();
+  const result = await driver.submit({
+    chatId: 'c-img',
+    message: 'what is this?',
+    images: [{ name: 'pic.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') }],
+  });
+  assert.equal(result.error, null, `error: ${result.error}`);
+  assert.ok(result.text.includes("I'm the mock reply"), `got: ${result.text}`);
+});
+
 test('submit(): streams deltas via onDelta', async () => {
   await makeDriver();
   const deltas = [];
