@@ -1319,7 +1319,79 @@ function openBrowser(url) {
   }, 1500);
 }
 
+// Find PIDs listening on a TCP port (cross-platform, best-effort).
+function pidsOnPort(port) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync('netstat -ano', { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const re = new RegExp(`[:.]${port}\\s+\\S+\\s+LISTENING\\s+(\\d+)`, 'g');
+      const pids = [];
+      let m;
+      while ((m = re.exec(out))) pids.push(m[1]);
+      return [...new Set(pids)];
+    }
+    const out = execSync(`lsof -t -iTCP:${port} -sTCP:LISTEN 2>/dev/null || ss -ltnp 2>/dev/null || netstat -tlnp 2>/dev/null`, {
+      timeout: 15000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return [...new Set(out.split(/\s+/).map((p) => p.replace(/\D/g, '')).filter((p) => /^\d+$/.test(p)))];
+  } catch {
+    return [];
+  }
+}
+
+// Is this PID our own gateway (a node process running server.js)? Only kill
+// those, never an unrelated app squatting on the port.
+function isOurServer(pid) {
+  try {
+    let cmd = '';
+    if (process.platform === 'win32') {
+      cmd = execSync(
+        `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
+        { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+    } else {
+      cmd = execSync(`ps -p ${pid} -o command=`, { timeout: 15000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    }
+    return /server\.js/.test(cmd);
+  } catch {
+    return false;
+  }
+}
+
+function killProcess(pid) {
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /PID ${pid}`, { timeout: 15000, stdio: 'ignore' });
+    } else {
+      process.kill(parseInt(pid, 10), 'SIGKILL');
+    }
+  } catch {}
+}
+
+// Auto-kill a previous instance of this gateway still bound to the port, so
+// starting the server never dies with EADDRINUSE.
+async function freePort(port, label) {
+  if (!port) return;
+  const pids = pidsOnPort(port).filter((p) => isOurServer(p));
+  if (pids.length) {
+    console.log(`[server] port ${port} (${label}) is held by a previous gateway instance — killing PID ${pids.join(', ')}`);
+  }
+  for (const p of pids) killProcess(p);
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    if (!pidsOnPort(port).length) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (pidsOnPort(port).length) {
+    console.log(`[server] WARNING: port ${port} (${label}) is still busy — another process may be holding it.`);
+  }
+}
+
 async function start() {
+  await freePort(PORT, 'http');
+  if (HTTPS) await freePort(HTTPS_PORT, 'https');
   if (HTTPS) {
     const certFile = path.join(PROFILE, 'selfsigned.crt');
     const keyFile = path.join(PROFILE, 'selfsigned.key');

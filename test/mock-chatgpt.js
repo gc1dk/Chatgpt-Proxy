@@ -12,16 +12,17 @@ const HTML = `<!doctype html>
 <head><meta charset="utf-8"><title>Mock ChatGPT</title></head>
 <body>
   <div id="conv"></div>
-  <div data-mobile-composer>
+  <form id="composer-form">
     <input type="file" multiple>
     <textarea data-mobile-composer-prompt></textarea>
     <button data-composer-submit data-testid="send-btn">Send</button>
-  </div>
+  </form>
   <script>
     const conv = document.getElementById('conv');
+    const form = document.getElementById('composer-form');
     const ta = document.querySelector('[data-mobile-composer-prompt]');
     const btn = document.querySelector('[data-composer-submit]');
-    const fileInput = document.querySelector('input[type="file"]');
+    const fileInput = form.querySelector('input[type="file"]');
     btn.disabled = true;
     ta.addEventListener('input', () => {
       btn.disabled = !ta.value;
@@ -29,18 +30,21 @@ const HTML = `<!doctype html>
 
     fileInput.addEventListener('change', () => {
       if (!fileInput.files.length) return;
-      const wrap = document.querySelector('[data-mobile-composer]');
       const p = document.createElement('div');
       p.setAttribute('data-testid', 'attachment-processing');
       p.textContent = 'Processing image...';
-      wrap.appendChild(p);
+      form.appendChild(p);
       setTimeout(() => {
         p.remove();
+        const file = fileInput.files[0];
         const img = document.createElement('img');
-        img.setAttribute('alt', 'attachment preview');
+        img.setAttribute('alt', file ? file.name : 'image.png');
+        img.setAttribute('src', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
         img.style.width = '40px';
         img.style.height = '40px';
-        wrap.appendChild(img);
+        form.appendChild(img);
+        // Real ChatGPT clears the input once React consumes the files.
+        fileInput.value = '';
       }, 250);
     });
 
@@ -58,16 +62,11 @@ const HTML = `<!doctype html>
 
     btn.addEventListener('click', () => {
       const text = ta.value;
-      if (!text && !fileInput.files.length) return;
-      if (fileInput.files.length) {
-        const img = document.createElement('img');
-        img.setAttribute('alt', 'attachment preview');
-        img.style.width = '40px';
-        img.style.height = '40px';
-        document.querySelector('[data-mobile-composer]').appendChild(img);
-      }
+      const attachedImg = form.querySelector('img');
+      if (!text && !attachedImg) return;
       addMessage('user', text || 'image message');
       ta.value = '';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
       // Simulate generation: append tokens, then finish.
       const el = addMessage('assistant', 'I', true);
       btn.setAttribute('data-stop-generating', 'true');

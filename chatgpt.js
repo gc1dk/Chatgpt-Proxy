@@ -255,47 +255,87 @@ class ChatGPTDriver {
     throw new Error('composer did not appear (verification may be blocking)');
   }
 
-  async _fileSelector(page) {
+  // Locate the composer's real file input. Prefer the one inside the form that
+  // holds the textarea (avoids picking a stray avatar/upload input elsewhere on
+  // the page), falling back to the last file input on the page (the composer is
+  // rendered last). Returns a Playwright locator or null.
+  async _fileInputLocator(page) {
     try {
-      return await page.evaluate(
-        (fileSels) => {
-          for (const s of fileSels) {
-            const el = document.querySelector(s);
-            if (el) return s;
-          }
-          return null;
-        },
-        this.selOrder.file
-      );
+      const taSel = await page.evaluate((taSels) => {
+        for (const s of taSels) if (document.querySelector(s)) return s;
+        return null;
+      }, this.selOrder.textarea);
+      if (taSel) {
+        const inner = page.locator(`form:has(${taSel}) input[type="file"]`).first();
+        if ((await inner.count()) > 0) return inner;
+      }
+      const last = page.locator('input[type="file"]').last();
+      if ((await last.count()) > 0) return last;
+      return null;
     } catch {
       return null;
     }
   }
 
-  async _waitForAttachments(page) {
+  // Wait until ChatGPT's composer actually picked up the files: a thumbnail or
+  // a chip that names the file appears and no "processing/uploading" indicator
+  // is active. Real ChatGPT clears the input's .files once React consumes them,
+  // so an empty file list is NOT a failure on its own.
+  async _waitForAttachments(page, timeoutMs = 45000) {
     const start = Date.now();
-    const deadline = start + 45000;
+    const deadline = start + timeoutMs;
+    let sawFiles = false;
     while (Date.now() < deadline) {
-      try {
-        const st = await page.evaluate(
-          (fileSels) => {
-            const input = window.__pick(fileSels);
+      const st = await page
+        .evaluate(
+          ({ fileSels, taSels }) => {
+            const ta = window.__pick(taSels);
+            const form = ta ? ta.closest('form') || ta.parentElement : null;
+            const input =
+              (form && form.querySelector('input[type="file"]')) || window.__pick(fileSels);
             const hasFiles = !!(input && input.files && input.files.length);
-            const thumbs = Array.from(
-              document.querySelectorAll(
-                'img[alt*="attachment" i], [data-testid*="attachment" i] img, [data-attachment-card] img'
+            const scope = form || document;
+            const thumbs = Array.from(scope.querySelectorAll('img')).filter((im) => {
+              const alt = (im.getAttribute('alt') || '').toLowerCase();
+              const src = (im.getAttribute('src') || '').toLowerCase();
+              return (
+                /attachment|upload|preview|thumb/.test(alt) ||
+                /^data:image|^blob:|files\.oaiusercontent|backend-api\/estuary/.test(src) ||
+                !!im.closest('[data-testid*="attachment" i]') ||
+                !!im.closest('[data-testid*="preview" i]')
+              );
+            });
+            const progressEls = Array.from(
+              scope.querySelectorAll(
+                '[data-testid*="attachment" i], [data-testid*="upload" i], [data-testid*="progress" i], [role="progressbar"]'
               )
             );
-            const processing = Array.from(document.querySelectorAll('[data-testid*="attachment" i]')).some(
-              (el) => /processing|uploading|uploaded/i.test(el.textContent || '')
+            const processing = progressEls.some(
+              (el) =>
+                /processing|uploading|progress/i.test(el.textContent || '') ||
+                !!el.querySelector('progress')
             );
-            return { hasFiles, thumbs: thumbs.length, processing };
+            const chip = Array.from(scope.querySelectorAll('button, span, div')).some((el) => {
+              if (el.querySelector('img')) return false;
+              const t = (el.textContent || '').trim();
+              return (
+                t.length > 0 &&
+                t.length < 120 &&
+                /(image|photo|attachment|\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.svg|\.heic|\.webp)/i.test(t) &&
+                !el.closest('[data-message-role]')
+              );
+            });
+            return { hasFiles, thumbs: thumbs.length, processing, chip };
           },
-          this.selOrder.file
-        );
-        if (st.thumbs > 0 && !st.processing) return true;
-        if (!st.hasFiles && Date.now() - start > 8000) return false;
-      } catch {}
+          { fileSels: this.selOrder.file, taSels: this.selOrder.textarea }
+        )
+        .catch(() => ({ hasFiles: false, thumbs: 0, processing: false, chip: false }));
+      if ((st.thumbs > 0 || st.chip) && !st.processing) return true;
+      if (st.hasFiles) sawFiles = true;
+      // Fail fast when the input never accepted the files (wrong target) or the
+      // composer consumed them but never showed a thumbnail (real upload failure).
+      if (Date.now() - start > 8000 && !st.hasFiles && !st.thumbs && !st.chip && sawFiles) return false;
+      if (Date.now() - start > 8000 && !sawFiles) return false;
       await sleep(600);
     }
     return false;
@@ -433,25 +473,33 @@ class ChatGPTDriver {
       }
 
       // Attach images (if any) through the composer's real file input, then wait
-      // for ChatGPT to finish processing them (thumbnails appear) before sending.
+      // for ChatGPT to finish processing them (thumbnails/chips appear) before
+      // sending. The composer's React onChange wires up ~1s after the input mounts,
+      // so if the first attempt doesn't produce a thumbnail we re-apply the files.
       if (images && images.length) {
-        const fileSel = await this._fileSelector(page);
-        if (!fileSel) {
-          throw new Error('could not attach the image to the composer (file input not found)');
+        const fileOpts = images.map((im) => ({
+          name: im.name || 'image.png',
+          mimeType: im.mimeType || 'image/png',
+          buffer: im.buffer,
+        }));
+        let attached = false;
+        for (let attempt = 0; attempt < 3 && !attached; attempt++) {
+          const fileInput = await this._fileInputLocator(page);
+          if (!fileInput) {
+            throw new Error('could not attach the image to the composer (file input not found)');
+          }
+          await fileInput
+            .setInputFiles(fileOpts)
+            .catch(() => {
+              throw new Error('could not attach the image to the composer');
+            });
+          attached = await this._waitForAttachments(page, 9000);
+          if (!attached && attempt < 2) {
+            await sleep(1500);
+            await fileInput.setInputFiles([]).catch(() => {});
+          }
         }
-        await page
-          .setInputFiles(
-            fileSel,
-            images.map((im) => ({
-              name: im.name || 'image.png',
-              mimeType: im.mimeType || 'image/png',
-              buffer: im.buffer,
-            }))
-          )
-          .catch(() => {
-            throw new Error('could not attach the image to the composer');
-          });
-        if (!(await this._waitForAttachments(page))) {
+        if (!attached) {
           throw new Error('image attachment did not finish processing');
         }
       }
