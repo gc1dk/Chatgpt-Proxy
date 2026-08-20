@@ -26,6 +26,7 @@
     lastPrompt: '',
     currentChatId: null,
     loadedChatId: null,
+    streamAbort: null,
   };
 
   // ---- image attachments (composer -> /api/chat) ----
@@ -695,6 +696,8 @@
   async function sendMessage(text) {
     if (state.busy) return;
     state.busy = true;
+    const ac = new AbortController();
+    state.streamAbort = ac;
     const imgs = pendingImages.splice(0, MAX_IMAGES);
     renderAttachStrip();
     state.lastPrompt = text;
@@ -723,6 +726,7 @@
     stopBtn.className = 'msg-action';
     stopBtn.innerHTML = STOP_SVG + '<span>Stop</span>';
     stopBtn.addEventListener('click', () => {
+      ac.abort();
       api('/api/stop', { method: 'POST' }).catch(() => {});
       stopBtn.disabled = true;
       stopBtn.querySelector('span').textContent = 'Stopping…';
@@ -755,6 +759,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, chatId: state.currentChatId, images: imgs }),
+        signal: ac.signal,
       });
       if (!res.ok || !res.body) {
         let errText = 'Bad response from server (' + res.status + ')';
@@ -789,8 +794,13 @@
     } catch (e) {
       clearInterval(watchdog);
       stopRow.remove();
-      if (!bubble.ready) bubble.error({ code: 'internal', message: String((e && e.message) || e) });
+      if (e && e.name === 'AbortError') {
+        if (bubble.msg.isConnected) bubble.error({ code: 'cancelled' });
+      } else if (!bubble.ready) {
+        bubble.error({ code: 'internal', message: String((e && e.message) || e) });
+      }
     } finally {
+      if (state.streamAbort === ac) state.streamAbort = null;
       state.busy = false;
       updateControls();
     }
@@ -843,10 +853,22 @@
 
   function updateControls() {
     sendBtn.disabled = state.busy || (!input.value.trim() && pendingImages.length === 0);
-    $('#new-chat').disabled = state.busy;
     input.disabled = state.busy;
     const attach = $('#attach');
     if (attach) attach.disabled = state.busy;
+  }
+
+  function abortStream() {
+    if (state.streamAbort) {
+      try {
+        state.streamAbort.abort();
+      } catch (e) {}
+      state.streamAbort = null;
+    }
+    if (state.busy) {
+      state.busy = false;
+      updateControls();
+    }
   }
 
   function autoGrow() {
@@ -913,6 +935,7 @@
           .then((res) => {
             if (res.ok) {
               if (state.currentChatId === chat.id) {
+                abortStream();
                 state.currentChatId = null;
                 state.loadedChatId = null;
                 clearMessages();
@@ -1041,14 +1064,10 @@
   }
 
   $('#new-chat').addEventListener('click', async () => {
-    if (state.busy) return;
+    abortStream();
     try {
       const r = await api('/api/new-chat', { method: 'POST' }).then((res) => res.json());
       if (r.ok && r.id) {
-        if (state.busy) {
-          refreshChatList();
-          return;
-        }
         state.currentChatId = r.id;
         clearMessages();
         pendingImages.length = 0;
@@ -1480,7 +1499,17 @@
 
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const mic = $('#mic');
-  if (mic && SpeechRec && window.isSecureContext) {
+  if (mic && !SpeechRec) {
+    mic.hidden = false;
+    mic.title = 'Voice input is not supported in this browser (use Chrome, Edge or Safari).';
+    mic.addEventListener('click', () => {
+      const hint = 'Voice input is not supported in this browser — use Chrome, Edge or Safari.';
+      showStatus(hint);
+      try {
+        alert(hint);
+      } catch (e) {}
+    });
+  } else if (mic && SpeechRec && window.isSecureContext) {
     mic.hidden = false;
     let rec = null;
     let listening = false;

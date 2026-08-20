@@ -121,9 +121,9 @@ const buildPrompt = (userId, message) => {
 
 let gatewayInflight = 0;
 const gatewayQueue = [];
-function gatewayChat(sessionKey, prompt, { system = null, images = null } = {}) {
+function gatewayChat(sessionKey, prompt, { system = null, images = null, onDelta = null } = {}) {
   return new Promise((resolve, reject) => {
-    gatewayQueue.push({ sessionKey, prompt, system, images, resolve, reject, attempts: 0 });
+    gatewayQueue.push({ sessionKey, prompt, system, images, onDelta, resolve, reject, attempts: 0 });
     pumpGateway();
   });
 }
@@ -148,7 +148,8 @@ function pumpGateway() {
   if (gatewayInflight >= 2 || !gatewayQueue.length) return;
   gatewayInflight++;
   const job = gatewayQueue.shift();
-  const { sessionKey, prompt, system, images, resolve, reject } = job;
+  const { sessionKey, prompt, system, images, onDelta, resolve, reject } = job;
+  const stream = !!onDelta;
   const u = new URL(GATEWAY + '/chat/completions');
   const mod = u.protocol === 'https:' ? https : http;
   const userContent =
@@ -156,10 +157,49 @@ function pumpGateway() {
       ? [{ type: 'text', text: prompt }, ...images.map((im) => ({ type: 'image_url', image_url: { url: im.dataUrl, name: im.name } }))]
       : prompt;
   const messages = system ? [{ role: 'system', content: system }, { role: 'user', content: userContent }] : [{ role: 'user', content: userContent }];
-  const body = JSON.stringify({ model: config.model || 'chatgpt', stream: false, user: sessionKey, messages });
+  const body = JSON.stringify({ model: config.model || 'chatgpt', stream, user: sessionKey, messages });
   const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
   if (config.masterToken) headers.Authorization = 'Bearer ' + config.masterToken;
   const req = mod.request(u, { method: 'POST', headers }, (res) => {
+    if (stream) {
+      let sseBuf = '';
+      let streamed = '';
+      const flushFrames = () => {
+        let idx;
+        while ((idx = sseBuf.indexOf('\n\n')) !== -1) {
+          const frame = sseBuf.slice(0, idx);
+          sseBuf = sseBuf.slice(idx + 2);
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') return;
+            try {
+              const j = JSON.parse(payload);
+              const d = j && j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+              if (typeof d === 'string') {
+                streamed += d;
+                onDelta(d);
+              }
+            } catch {}
+          }
+        }
+      };
+      res.on('data', (c) => {
+        sseBuf += c;
+        flushFrames();
+      });
+      res.on('end', () => {
+        gatewayInflight--;
+        if (res.statusCode === 429 || /rate_limited|rate limit/i.test(streamed)) {
+          retryLimited(job, reject);
+          return;
+        }
+        if (streamed.trim()) resolve(streamed.trim());
+        else reject(new Error('unexpected gateway response'));
+        pumpGateway();
+      });
+      return;
+    }
     let buf = '';
     res.on('data', (c) => (buf += c));
     res.on('end', () => {
@@ -188,7 +228,7 @@ function pumpGateway() {
     reject(e);
     pumpGateway();
   });
-  req.setTimeout(120000, () => req.destroy(new Error('gateway timeout')));
+  req.setTimeout(stream ? 600000 : 120000, () => req.destroy(new Error('gateway timeout')));
   req.write(body);
   req.end();
 }
@@ -703,13 +743,73 @@ function chunkReply(text, max = 1900) {
   if (rest) out.push(rest);
   return out;
 }
-async function replyText(target, text) {
+const streamStates = new WeakMap();
+function streamDelta(target, delta) {
+  if (!target || !delta) return;
+  let st = streamStates.get(target);
+  if (!st) {
+    st = { text: '', timer: null };
+    streamStates.set(target, st);
+  }
+  st.text += delta;
+  if (st.timer) return;
+  st.timer = setTimeout(() => {
+    st.timer = null;
+    if (st.cancelled || !st.text) return;
+    const content = st.text.length > 1900 ? st.text.slice(-1900) : st.text;
+    if (target.deferred || target.replied) target.editReply({ content }).catch(() => {});
+  }, 250);
+}
+async function replyText(target, text, opts = {}) {
+  const st = streamStates.get(target);
+  if (st) st.cancelled = true;
   const chunks = chunkReply(text);
-  for (const c of chunks) {
-    if (target.deferred || target.replied) await target.editReply(c);
-    else await target.reply(c);
+  const files = opts.attachCode === false ? [] : codeFilesOf(text);
+  for (let i = 0; i < chunks.length; i++) {
+    let content = chunks[i];
+    const payload = { content };
+    if (i === 0 && files.length) {
+      content += '\n\n**Attached:** ' + files.map((f) => f.name).join(', ');
+      payload.content = content;
+      payload.files = files;
+    }
+    if (target.deferred || target.replied) await target.editReply(payload);
+    else await target.reply(payload);
     target.deferred = true;
   }
+}
+const CODE_EXT = {
+  js: 'js', javascript: 'js', ts: 'ts', typescript: 'ts', py: 'py', python: 'py',
+  html: 'html', htm: 'html', css: 'css', json: 'json', xml: 'xml', svg: 'svg',
+  md: 'md', markdown: 'md', txt: 'txt', text: 'txt', c: 'c', h: 'h', cpp: 'cpp',
+  hpp: 'hpp', cs: 'cs', csharp: 'cs', java: 'java', go: 'go', rust: 'rs', rs: 'rs',
+  sh: 'sh', bash: 'sh', zsh: 'sh', bat: 'bat', cmd: 'bat', ps1: 'ps1', powershell: 'ps1',
+  sql: 'sql', yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini', conf: 'conf',
+  dockerfile: 'dockerfile', graphql: 'graphql', gql: 'graphql', kt: 'kt', kotlin: 'kt',
+  swift: 'swift', rb: 'rb', ruby: 'rb', php: 'php', lua: 'lua', r: 'r', pl: 'pl',
+  perl: 'pl', scala: 'scala', dart: 'dart', vue: 'vue', jsx: 'jsx', tsx: 'tsx',
+  svelte: 'svelte', zig: 'zig', nim: 'nim', hs: 'hs', haskell: 'hs', ex: 'ex',
+  elixir: 'ex', erl: 'erl', clj: 'clj', clojure: 'clj', diff: 'diff', patch: 'patch',
+  log: 'log', csv: 'csv', webmanifest: 'webmanifest',
+};
+function codeFilesOf(text) {
+  const out = [];
+  const used = new Set();
+  const fenceRe = /```([^\n`]{0,40})?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = fenceRe.exec(text)) && out.length < 10) {
+    const lang = String(m[1] || '').trim().toLowerCase();
+    const code = m[2].trim();
+    if (!code) continue;
+    const ext = CODE_EXT[lang] || 'txt';
+    const base = ext === 'dockerfile' ? 'Dockerfile' : 'code';
+    let name = ext === 'dockerfile' ? 'Dockerfile' : base + '.' + ext;
+    let n = 2;
+    while (used.has(name)) name = ext === 'dockerfile' ? 'Dockerfile-' + n++ : base + '-' + n++ + '.' + ext;
+    used.add(name);
+    out.push({ name, attachment: Buffer.from(code, 'utf8') });
+  }
+  return out;
 }
 async function respond(target, payload) {
   if (target.deferred || target.replied) return target.editReply(payload);
@@ -730,20 +830,20 @@ async function runChat(target, user, message, { stateless = false, images = null
     await target.deferReply({ ephemeral: false }).catch(() => {});
   }
   try {
-    const reply = await gatewayChat(key, prompt, { images });
+    const reply = await gatewayChat(key, prompt, { images, onDelta: (d) => streamDelta(target, d) });
     const text = reply.trim() || '_empty reply_';
     await replyText(target, text);
     if (!stateless) speakIfInVoice(target.guild && target.guild.id, user.id, text);
   } catch (e) {
-    await replyText(target, `Gateway error: ${String((e && e.message) || e)}`);
+    await replyText(target, `Gateway error: ${String((e && e.message) || e)}`, { attachCode: false });
   }
 }
 
 // -------------------------------------------------------------- commands ---
 
 const cmdDefs = [
-  new SlashCommandBuilder().setName('ask').setDescription('One-shot question (no conversation memory)').addStringOption((o) => o.setName('prompt').setDescription('Your question').setRequired(true)).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
-  new SlashCommandBuilder().setName('chat').setDescription('Chat with the bot (keeps your conversation)').addStringOption((o) => o.setName('message').setDescription('Your message').setRequired(true)).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
+  new SlashCommandBuilder().setName('ask').setDescription('One-shot question (no conversation memory)').addStringOption((o) => o.setName('prompt').setDescription('Your question')).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
+  new SlashCommandBuilder().setName('chat').setDescription('Chat with the bot (keeps your conversation)').addStringOption((o) => o.setName('message').setDescription('Your message')).addAttachmentOption((o) => o.setName('image').setDescription('Optional image to attach').setRequired(false)),
   new SlashCommandBuilder().setName('reset').setDescription('Forget your conversation and start fresh'),
   new SlashCommandBuilder().setName('history').setDescription('Show the last messages of your conversation').addIntegerOption((o) => o.setName('limit').setDescription('How many messages (default 10)').setMinValue(1).setMaxValue(40)),
   new SlashCommandBuilder().setName('summarize').setDescription('Ask ChatGPT to summarize your conversation so far'),
@@ -758,6 +858,8 @@ const cmdDefs = [
   new SlashCommandBuilder().setName('voice').setDescription('Voice chat controls').addStringOption((o) => o.setName('action').setDescription('join / leave / status').setRequired(true)),
   new SlashCommandBuilder().setName('auto-mod').setDescription('Toggle ChatGPT auto-moderation for this server').addStringOption((o) => o.setName('mode').setDescription('on / off / status / all channels').setRequired(true).addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' }, { name: 'status', value: 'status' }, { name: 'all channels', value: 'all' })).addStringOption((o) => o.setName('policy').setDescription('Set a custom moderation policy (or "keep")')).addStringOption((o) => o.setName('action').setDescription('Default action: warn / delete / timeout')).addChannelOption((o) => o.setName('channel').setDescription('Only moderate this channel')),
   new SlashCommandBuilder().setName('about').setDescription('About this bot'),
+  new SlashCommandBuilder().setName('demo').setDescription('Get the link to the public live demo'),
+  new SlashCommandBuilder().setName('credits').setDescription('Who built this and what it runs on'),
   new SlashCommandBuilder().setName('help').setDescription('List all commands'),
 ];
 
@@ -844,10 +946,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     switch (commandName) {
       case 'ask': {
+        if (!opts.prompt) {
+          return respond(interaction, { content: `Usage: **/ask <prompt>** — one-shot question, no conversation memory.\n\nTip: **${config.prefix || '!'}ask <prompt>** in chat works too.`, ephemeral: true });
+        }
         const imgs = await imagesOf(opts.image ? [opts.image] : null);
         return runChat(interaction, user, opts.prompt, { stateless: true, images: imgs });
       }
       case 'chat': {
+        if (!opts.message) {
+          return respond(interaction, { content: `Usage: **/chat <message>** — continues your conversation.\n\nTip: **${config.prefix || '!'}chat <message>** in chat works too.`, ephemeral: true });
+        }
         const imgs = await imagesOf(opts.image ? [opts.image] : null);
         return runChat(interaction, user, opts.message, { images: imgs });
       }
@@ -931,7 +1039,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const { status, body } = await gatewayGet('/v1/models');
         const latency = Date.now() - t0;
         const j = safeParse(body);
-        const models = j && Array.isArray(j.models) ? j.models : [];
+        const models = j && Array.isArray(j.data) ? j.data : [];
         const up = process.uptime();
         const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
         return respond(interaction,{
@@ -951,6 +1059,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
       case 'source':
         return respond(interaction,{ content: '**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!' });
+      case 'demo':
+        return respond(interaction,{ content: '**Live demo:** https://chatgpt-github.pages.dev\nPublicly hosted — chats are shared and temporary. Prefer your own copy? https://github.com/gc1dk/Chatgpt-Proxy' });
+      case 'credits':
+        return respond(interaction,{
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x10a37f)
+              .setTitle('Credits')
+              .setDescription(
+                `Built with the **ChatGPT Gateway** — a free, self-hosted, fully editable proxy that drives the official ChatGPT website (no API keys).\n\n` +
+                  `**Source:** https://github.com/gc1dk/Chatgpt-Proxy\n` +
+                  `**Voice:** Vosk (speech-to-text) + Edge TTS\n\n` +
+                  `Not affiliated with, endorsed by, or sponsored by OpenAI.`
+              ),
+          ],
+        });
       case 'verify':
         return doVerify(interaction, opts.code);
       case 'voice': {
@@ -1007,7 +1131,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               `**Voice:** /voice join — talk, it answers out loud\n` +
               `**Moderation:** /auto-mod on — ChatGPT moderates channels\n` +
               `**Verification:** /verify — one-time-code role gate\n` +
-              `**Tools:** /export your chat, /status gateway health, /source the code\n` +
+              `**Tools:** /export your chat, /status gateway health, /demo live demo link, /source the code\n` +
               `Prefix commands also work: ${config.prefix || '!'}chat, ${config.prefix || '!'}ask, …`
           );
         return respond(interaction,{ embeds: [embed] });
@@ -1134,7 +1258,7 @@ client.on(Events.MessageCreate, async (message) => {
         const { status, body } = await gatewayGet('/v1/models');
         const latency = Date.now() - t0;
         const j = safeParse(body);
-        const models = j && Array.isArray(j.models) ? j.models : [];
+        const models = j && Array.isArray(j.data) ? j.data : [];
         const up = process.uptime();
         const h = Math.floor(up / 3600), m = Math.floor((up % 3600) / 60);
         return message.reply(
@@ -1146,6 +1270,10 @@ client.on(Events.MessageCreate, async (message) => {
       }
       case 'source':
         return message.reply('**Source code:** https://github.com/gc1dk/Chatgpt-Proxy\nEverything is self-hosted, free, and fully editable. Give it a ⭐ if you like it!');
+      case 'demo':
+        return message.reply('**Live demo:** https://chatgpt-github.pages.dev\nPublicly hosted — chats are shared and temporary. Prefer your own copy? https://github.com/gc1dk/Chatgpt-Proxy');
+      case 'credits':
+        return message.reply('Built with the **ChatGPT Gateway** — free, self-hosted, fully editable (no API keys). Source: https://github.com/gc1dk/Chatgpt-Proxy\nVoice: Vosk (speech-to-text) + Edge TTS. Not affiliated with OpenAI.');
       case 'verify': return doVerify(fake, rest.trim());
       case 'voice': {
         const action = rest.trim().toLowerCase();
