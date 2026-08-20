@@ -125,8 +125,60 @@ class ChatGPTDriver {
     } catch {}
   }
 
+  static _isClosedError(e) {
+    const m = String((e && e.message) || e || '');
+    return (
+      m.includes('browser has been closed') ||
+      m.includes('context has been closed') ||
+      m.includes('Target closed') ||
+      m.includes('Target page, context or browser has been closed') ||
+      m.includes('Session closed') ||
+      m.includes('Execution context was destroyed') ||
+      m.includes('Browser has been disconnected') ||
+      m.includes('Connection closed') ||
+      m.includes('Target crashed') ||
+      m.includes('navigated to a different page')
+    );
+  }
+
+  async _alive() {
+    if (!this.context) return false;
+    if (this.page) {
+      try {
+        await this.page.evaluate(() => 1);
+        return true;
+      } catch (e) {
+        if (ChatGPTDriver._isClosedError(e)) return false;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async _relaunch() {
+    try {
+      if (this.context) await this.context.close().catch(() => {});
+    } catch {}
+    this.context = null;
+    this.page = null;
+    this.pages = {};
+    this._initialPage = null;
+    this._deltas = {};
+    this.ready = false;
+    this.busy = false;
+    this._startPromise = null;
+    console.log('[chatgpt] browser was dead - relaunching');
+    await this.start();
+  }
+
   async start() {
-    if (this._startPromise) return this._startPromise;
+    if (this._startPromise) {
+      try {
+        await this._startPromise;
+        if (await this._alive()) return true;
+      } catch {}
+      this._startPromise = null;
+    }
     this._startPromise = (async () => {
       const opts = {
         headless: !this.headed,
@@ -208,17 +260,33 @@ class ChatGPTDriver {
     await this.waitForComposer(120000, page);
   }
 
-  async ensureChat(chatId) {
+  async ensureChat(chatId, retried = false) {
     await this.start();
-    if (this.pages[chatId]) return this.pages[chatId];
+    if (this.pages[chatId]) {
+      try {
+        await this.pages[chatId].evaluate(() => 1);
+        return this.pages[chatId];
+      } catch (e) {
+        if (ChatGPTDriver._isClosedError(e)) delete this.pages[chatId];
+        else return this.pages[chatId];
+      }
+    }
     let page;
-    if (this._initialPage) {
-      page = this._initialPage;
-      this._initialPage = null;
-    } else {
-      page = await this.context.newPage();
-      await this._preparePage(page);
-      await this._openConversation(page);
+    try {
+      if (this._initialPage) {
+        page = this._initialPage;
+        this._initialPage = null;
+      } else {
+        page = await this.context.newPage();
+        await this._preparePage(page);
+        await this._openConversation(page);
+      }
+    } catch (e) {
+      if (ChatGPTDriver._isClosedError(e) && !retried) {
+        await this._relaunch();
+        return this.ensureChat(chatId, true);
+      }
+      throw e;
     }
     page.__cgChatId = chatId;
     this.pages[chatId] = page;
