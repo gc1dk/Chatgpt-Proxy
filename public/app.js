@@ -304,9 +304,9 @@
     });
   }
 
-  $('#login-submit').addEventListener('click', () => submitLogin());
-  $('#login-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') submitLogin();
+  $('#login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitLogin();
   });
   $('#login-signup-toggle').addEventListener('click', () => {
     loginMode = loginMode === 'signup' ? 'login' : 'signup';
@@ -680,7 +680,7 @@
           retryBtn.className = 'msg-action';
           retryBtn.innerHTML = RETRY_SVG + '<span>Retry</span>';
           retryBtn.addEventListener('click', () => {
-            msgEl.remove();
+            msg.remove();
             sendMessage(state.lastPrompt);
           });
           box.appendChild(retryBtn);
@@ -1407,6 +1407,7 @@
 
   async function checkUpdate(force) {
     if (updateState === 'checking') return;
+    if (isPublicHost()) return;
     const banner = $('#update-banner');
     if (!banner) return;
     setBanner('checking', 'Checking for updates…');
@@ -1582,6 +1583,8 @@
       const ws = $('#welcome-sub');
       if (ws) ws.textContent = 'Live public demo - your chats go through the demo backend and are not private.';
     }
+    const gb = $('#github-btn');
+    if (gb) gb.style.display = isPublicHost() ? '' : 'none';
     let s = null;
     try {
       s = await refreshChatList();

@@ -120,16 +120,18 @@
       <span class="modal-title" id="login-title">Log in</span>
     </div>
     <div class="modal-body">
-      <label class="login-label" for="login-username">Username</label>
-      <input id="login-username" class="login-input" autocomplete="username" spellcheck="false">
-      <label class="login-label" for="login-password">Password</label>
-      <input id="login-password" class="login-input" type="password" autocomplete="current-password">
-      <p class="login-error" id="login-error"></p>
-      <div class="login-actions">
-        <button id="login-submit" class="msg-action">Log in</button>
-        <button id="login-signup-toggle" class="msg-action ghost">Create an account</button>
-        <button id="login-token-toggle" class="msg-action ghost">Use a token instead</button>
-      </div>
+      <form id="login-form" autocomplete="on">
+        <label class="login-label" for="login-username">Username</label>
+        <input id="login-username" class="login-input" autocomplete="username" spellcheck="false">
+        <label class="login-label" for="login-password">Password</label>
+        <input id="login-password" class="login-input" type="password" autocomplete="current-password">
+        <p class="login-error" id="login-error"></p>
+        <div class="login-actions">
+          <button id="login-submit" class="msg-action" type="submit">Log in</button>
+          <button id="login-signup-toggle" class="msg-action ghost" type="button">Create an account</button>
+          <button id="login-token-toggle" class="msg-action ghost" type="button">Use a token instead</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
